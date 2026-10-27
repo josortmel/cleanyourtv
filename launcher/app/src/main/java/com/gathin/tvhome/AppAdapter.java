@@ -7,6 +7,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.content.pm.ShortcutInfo;
 import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
@@ -64,12 +65,14 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     }
 
     static final class Entry {
-        static final int APP = 0, HOME_SETTINGS = 1, CARD = 2, EMPTY = 3;
+        static final int APP = 0, HOME_SETTINGS = 1, CARD = 2, EMPTY = 3, SHORTCUT = 4;
 
         final int kind;
         final String label;
         final ComponentName component;
         final String pkg;
+        /** SHORTCUT: the pinned shortcut's id in its app (pinned_shortcuts); null for every other tile. */
+        final String shortcutId;
         final Drawable banner;
         final Drawable icon;
         /** Text under the tile when it is focused in the grid: the label, plus the caption for a card. */
@@ -84,7 +87,13 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         }
 
         Entry(int kind, String label, ComponentName component, Drawable banner, Drawable icon, String caption, int accent) {
+            this(kind, label, component, banner, icon, caption, accent, null);
+        }
+
+        Entry(int kind, String label, ComponentName component, Drawable banner, Drawable icon, String caption, int accent,
+              String shortcutId) {
             this.kind = kind;
+            this.shortcutId = shortcutId;
             this.label = label;
             this.component = component;
             this.pkg = component.getPackageName();
@@ -221,6 +230,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     /** The glass tiles' fill where no wallpaper shows through (config.xml background_color). */
     private final int glassFallback;
     private final int glassFrost;
+    /** Shortcuts other apps pin to Home are tiles too (config.xml, pinned_shortcuts). */
+    private final boolean pinnedShortcuts;
     /** Packages drawn from their icon and name even when they have a banner (config.xml icon_tiles). */
     private final Set<String> iconTiles;
     private final List<Entry> items = new ArrayList<>();
@@ -254,6 +265,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         this.glassTiles = cfg.glassTiles;
         this.glassFallback = cfg.backgroundColor;
         this.glassFrost = cfg.glassFrost;
+        this.pinnedShortcuts = cfg.pinnedShortcuts;
         // Tiles keep their identity across reload(), so a focused tile stays on its app instead of
         // its view being rebound to whatever app now sits in that slot.
         setHasStableIds(true);
@@ -317,11 +329,20 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 fresh.add(new Entry(label, component, banner, icon));
             }
         }
+        if (pinnedShortcuts) {
+            // A pinned shortcut is a tile of its own, keyed by its app and id so the saved order keeps it in place.
+            for (ShortcutInfo s : PinnedShortcuts.pinned(ctx)) {
+                String label = Cards.cleanLabel(PinnedShortcuts.label(s), s.getPackage());
+                Drawable banner = PinnedShortcuts.banner(ctx, s, label);
+                fresh.add(new Entry(Entry.SHORTCUT, label, new ComponentName(s.getPackage(), "shortcut/" + s.getId()),
+                        banner, null, null, 0, s.getId()));
+            }
+        }
         Collections.sort(fresh, (a, b) -> {
             // The owner's own order first; tiles it does not know (new installs) follow by the rule below.
             int saved = Order.compare(savedRanks, a.component.flattenToShortString(), b.component.flattenToShortString());
             if (saved != 0) return saved;
-            int fa = favourites.indexOf(a.pkg), fb = favourites.indexOf(b.pkg);
+            int fa = favourites.indexOf(favouriteKey(a)), fb = favourites.indexOf(favouriteKey(b));
             if (fa >= 0 || fb >= 0) {
                 if (fa < 0) return 1;
                 if (fb < 0) return -1;
@@ -542,8 +563,27 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         });
     }
 
+    /**
+     * The name a tile goes by in dock_apps: its package, or for a pinned shortcut "shortcut:" and its name's slug, so
+     * a game's shortcut is not docked just because Moonlight is.
+     */
+    private static String favouriteKey(Entry e) {
+        return e.kind == Entry.SHORTCUT ? "shortcut:" + PinnedShortcuts.slug(e.label) : e.pkg;
+    }
+
+    /** The pinned shortcut's id at this position (pinned_shortcuts), or null when the tile is an app. */
+    String shortcutIdAt(int position) {
+        return position >= 0 && position < items.size() ? items.get(position).shortcutId : null;
+    }
+
     /** Opens the tile's activity by explicit component, with no extras: a card can name nothing else. */
     private void launch(Entry e) {
+        if (e.kind == Entry.SHORTCUT) {
+            if (!PinnedShortcuts.start(ctx, e.pkg, e.shortcutId)) {
+                Toast.makeText(ctx, ctx.getString(R.string.cant_open, e.label), Toast.LENGTH_SHORT).show();
+            }
+            return;
+        }
         if (e.kind == Entry.HOME_SETTINGS) {
             ctx.startActivity(new Intent(ctx, HomeSettingsActivity.class)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
@@ -605,7 +645,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
      * the owner moved into the dock stays there (#499); else a dock_apps entry.
      */
     private boolean isDocked(Entry e) {
-        if (savedDocked < 0) return favourites.contains(e.pkg);
+        if (savedDocked < 0) return favourites.contains(favouriteKey(e));
         Integer rank = savedRanks.get(e.component.flattenToShortString());
         return rank != null && rank < savedDocked;
     }

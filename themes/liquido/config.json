@@ -23,5 +23,6 @@
   "glass_style": "rim",
   "tile_menu": true,
   "app_library": true,
-  "move_swaps": true
+  "move_swaps": true,
+  "pinned_shortcuts": true
 }

@@ -15,6 +15,8 @@ import android.content.pm.PackageManager;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.ResolveInfo;
 import android.content.pm.ChangedPackages;
+import android.content.pm.LauncherApps;
+import android.content.pm.ShortcutInfo;
 import android.content.res.ColorStateList;
 import android.content.res.Resources;
 import android.graphics.Bitmap;
@@ -41,6 +43,7 @@ import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.UserHandle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -52,6 +55,7 @@ import android.text.Spanned;
 import android.text.TextPaint;
 import android.text.TextUtils;
 import android.text.style.ForegroundColorSpan;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -130,6 +134,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private boolean tileMenuEnabled;
     /** move_swaps: a tile picked up from the tile menu swaps places with the one OK lands on. */
     private boolean moveSwaps;
+    /** pinned_shortcuts: Home rebuilds when an app pins or removes a shortcut. */
+    private LauncherApps.Callback shortcutCallback;
+    /** The pinned shortcuts Home last showed (PinnedShortcuts.signature), to skip updates that change none of them. */
+    private String shownShortcuts;
     /** The tile carried by a swap: focus moves freely and OK swaps it with the focused tile. */
     private boolean swapping;
     private String inputAction;
@@ -836,6 +844,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         } else {
             registerReceiver(packageReceiver, packageFilter);
         }
+        if (cfg.pinnedShortcuts) registerShortcutCallback();
 
         ConnectivityManager cm = getSystemService(ConnectivityManager.class);
         TvInputManager tim = (TvInputManager) getSystemService(TV_INPUT_SERVICE);
@@ -976,6 +985,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             default:
                 break;
         }
+        checkTilesShownAfterLayout();
         if (openLiveTvAfterBoot()) return;
         updateGreeting();
         updateRace();
@@ -1002,6 +1012,22 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 handler.postDelayed(this::playPetalShower, 450);
             }
         }
+    }
+
+    /**
+     * Safety net: Home came back with apps to show and no tile on screen. Seen once on a TCL 55C7L (Google TV 14),
+     * after the launcher was installed and started while the TV slept; it did not reproduce on purpose, so the cause
+     * is unknown. A rebuild puts the tiles back, and the log line is the evidence for the next time.
+     */
+    private void checkTilesShownAfterLayout() {
+        grid.postDelayed(() -> {
+            if (isFinishing() || !started || grid.getAdapter() == null) return;
+            if (adapter.appCount() > 0 && grid.getChildCount() == 0) {
+                Log.w("TvHome", "Home resumed with " + adapter.appCount() + " apps and no tile laid out: rebuilding");
+                tilesReady = false;
+                reloadApps(true);
+            }
+        }, 1500);
     }
 
     /** Launcher settings' change count (Config.SETTINGS_REVISION_KEY); onResume rebuilds Home when it moved. */
@@ -1218,10 +1244,55 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
     }
 
+    /** pinned_shortcuts: a shortcut pinned or removed in any app rebuilds the tiles, as a package change does. */
+    private void registerShortcutCallback() {
+        LauncherApps la = getSystemService(LauncherApps.class);
+        if (la == null) return;
+        shownShortcuts = PinnedShortcuts.signature(this);
+        shortcutCallback = new LauncherApps.Callback() {
+            @Override
+            public void onShortcutsChanged(@NonNull String packageName, @NonNull List<ShortcutInfo> shortcuts,
+                                           @NonNull UserHandle user) {
+                // Apps refresh their dynamic shortcuts often (Moonlight on every poll of the PC); only a change to
+                // what Home shows is worth a rebuild, which reloads every tile's artwork.
+                String now = PinnedShortcuts.signature(MainActivity.this);
+                if (now.equals(shownShortcuts)) return;
+                shownShortcuts = now;
+                if (!tileRefresh.onPackagesChanged()) return;
+                reloadApps(false);
+            }
+
+            @Override
+            public void onPackageRemoved(String packageName, UserHandle user) {
+            }
+
+            @Override
+            public void onPackageAdded(String packageName, UserHandle user) {
+            }
+
+            @Override
+            public void onPackageChanged(String packageName, UserHandle user) {
+            }
+
+            @Override
+            public void onPackagesAvailable(String[] packageNames, UserHandle user, boolean replacing) {
+            }
+
+            @Override
+            public void onPackagesUnavailable(String[] packageNames, UserHandle user, boolean replacing) {
+            }
+        };
+        la.registerCallback(shortcutCallback, handler);
+    }
+
     @Override
     protected void onDestroy() {
         super.onDestroy();
         unregisterReceiver(packageReceiver);
+        if (shortcutCallback != null) {
+            LauncherApps la = getSystemService(LauncherApps.class);
+            if (la != null) la.unregisterCallback(shortcutCallback);
+        }
         wallpaperPlayer.close();
         ConnectivityManager cm = getSystemService(ConnectivityManager.class);
         TvInputManager tim = (TvInputManager) getSystemService(TV_INPUT_SERVICE);
@@ -3391,7 +3462,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             swapping = moveSwaps;
             Toast.makeText(this, moveSwaps ? R.string.move_swap_hint : R.string.reorder_hint, Toast.LENGTH_LONG).show();
         });
-        if (appLibraryEnabled) addSettingsMenuRow(rows, popup, R.string.library_remove_shortcut, () -> {
+        String shortcutId = adapter.shortcutIdAt(position);
+        if (shortcutId != null) {
+            // A pinned shortcut comes off Home by unpinning it; the app it belongs to stays.
+            addSettingsMenuRow(rows, popup, R.string.library_remove_shortcut, () -> {
+                if (!PinnedShortcuts.unpin(this, pkg, shortcutId)) {
+                    Toast.makeText(this, R.string.library_save_failed, Toast.LENGTH_LONG).show();
+                }
+            });
+        } else if (appLibraryEnabled) addSettingsMenuRow(rows, popup, R.string.library_remove_shortcut, () -> {
             if (LibraryApps.save(this, pkg, false)) reloadApps(false);
             else Toast.makeText(this, R.string.library_save_failed, Toast.LENGTH_LONG).show();
         });

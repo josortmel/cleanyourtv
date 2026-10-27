@@ -99,6 +99,20 @@
             </intent-filter>
         </activity>
 
+        <!-- pinned_shortcuts: an app asks to pin a shortcut to Home (Moonlight's "Create shortcut" on a game). Its own
+             task (empty affinity), so finishing it returns to that app instead of bringing Home to the front. -->
+        <activity
+            android:name=".PinShortcutActivity"
+            android:exported="true"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.content.pm.action.CONFIRM_PIN_SHORTCUT" />
+            </intent-filter>
+        </activity>
+
         <activity
             android:name=".LauncherSettingsActivity"
             android:exported="false"
