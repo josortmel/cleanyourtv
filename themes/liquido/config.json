@@ -20,5 +20,8 @@
   "advanced_effects": true,
   "glass_frost": 8,
   "glass_blur": 1,
-  "glass_style": "rim"
+  "glass_style": "rim",
+  "tile_menu": true,
+  "app_library": true,
+  "move_swaps": true
 }

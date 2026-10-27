@@ -128,6 +128,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private boolean appLibraryEnabled;
     /** The same opt-in menu is available from either hold-OK or the remote's Menu key. */
     private boolean tileMenuEnabled;
+    /** move_swaps: a tile picked up from the tile menu swaps places with the one OK lands on. */
+    private boolean moveSwaps;
+    /** The tile carried by a swap: focus moves freely and OK swaps it with the focused tile. */
+    private boolean swapping;
     private String inputAction;
     private List<String> inputSources;
     private String inputUriScheme;
@@ -419,6 +423,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         liveTvInputId = cfg.liveTvInputId;
         appLibraryEnabled = cfg.appLibrary;
         tileMenuEnabled = cfg.tileMenu;
+        moveSwaps = cfg.moveSwaps;
         inputAction = cfg.inputAction;
         inputSources = cfg.inputSources;
         inputUriScheme = cfg.inputUriScheme;
@@ -1280,6 +1285,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         boolean ok = code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER
                 || code == KeyEvent.KEYCODE_NUMPAD_ENTER;
         boolean back = code == KeyEvent.KEYCODE_BACK || code == KeyEvent.KEYCODE_ESCAPE;
+        if (movingKey != null && swapping) return dispatchSwap(event, down, ok, back);
         if (movingKey != null) {
             switch (code) {
                 case KeyEvent.KEYCODE_DPAD_LEFT:
@@ -1454,6 +1460,39 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         refocusAfterLayout(slot);
     }
 
+    /**
+     * Keys while a tile is carried for a swap (move_swaps): the arrows move focus as usual and the carried tile stays
+     * where it is; OK on another tile swaps the two and saves; Back, or OK on the carried tile, puts it down unmoved.
+     * Either way the mode ends, as the tile menu started it for this one move.
+     */
+    private boolean dispatchSwap(KeyEvent event, boolean down, boolean ok, boolean back) {
+        if (ok || back) {
+            if (!down) {
+                int from = adapter.positionOf(movingKey);
+                int to = focusedTilePosition();
+                if (ok && from >= 0 && to >= 0 && to < adapter.movableCount() && to != from) {
+                    String carried = movingKey, other = adapter.keyAt(to);
+                    keepScroll(() -> {
+                        adapter.move(from, to);
+                        adapter.move(adapter.positionOf(other), from);
+                    });
+                    for (String key : new String[]{carried, other}) {
+                        if (adapter.positionOf(key) < COLUMNS) dockInSession.add(key);
+                        else dockInSession.remove(key);
+                    }
+                    endReorder();
+                    refocusAfterLayout(to);
+                } else {
+                    endReorder();
+                }
+            }
+            return true;
+        }
+        boolean handled = super.dispatchKeyEvent(event);   // arrows navigate; the carried tile stays put
+        if (!down) dimOthers();   // the tile now focused lights up as the place it would go
+        return handled;
+    }
+
     private void pickUp(int pos) {
         if (pos >= adapter.movableCount()) return;   // the "Default home" tile stays put
         movingKey = adapter.keyAt(pos);
@@ -1463,6 +1502,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** Puts the carried tile down where it is; the mode stays on. */
     private void drop() {
         movingKey = null;
+        swapping = false;
         dimOthers();
     }
 
@@ -1477,7 +1517,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** A tile's alpha: dim unless it is the carried one, or, in edit-dock mode, a dock tile other than the chosen place. */
     private float tileAlpha(int pos) {
         if (movingKey != null) {
-            return pos != RecyclerView.NO_POSITION && movingKey.equals(adapter.keyAt(pos)) ? 1f : 0.45f;
+            if (pos == RecyclerView.NO_POSITION) return 0.45f;
+            if (movingKey.equals(adapter.keyAt(pos))) return 1f;
+            // A swap: the focused tile is the place it would go, so it stays lit too.
+            return swapping && pos == focusedTilePosition() ? 1f : 0.45f;
         }
         if (dockEditSlot >= 0 && pos >= 0 && pos < COLUMNS && pos != dockEditSlot) return 0.45f;
         return 1f;
@@ -3345,7 +3388,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (at < 0) return;
             focusTile(at);
             pickUp(at);
-            Toast.makeText(this, R.string.reorder_hint, Toast.LENGTH_LONG).show();
+            swapping = moveSwaps;
+            Toast.makeText(this, moveSwaps ? R.string.move_swap_hint : R.string.reorder_hint, Toast.LENGTH_LONG).show();
         });
         if (appLibraryEnabled) addSettingsMenuRow(rows, popup, R.string.library_remove_shortcut, () -> {
             if (LibraryApps.save(this, pkg, false)) reloadApps(false);
