@@ -67,6 +67,7 @@
     <string name="reorder">Reordenar apps</string>
     <string name="tile_move">Mover</string>
     <string name="shortcut_pinned">%1$s ya está en el inicio.</string>
+    <string name="web_dream_name">Tu escena</string>
     <string name="move_swap_hint">Elige el sitio con las flechas, OK intercambia las dos apps, Atrás cancela.</string>
     <string name="reorder_hint">OK coge una app, las flechas la mueven, Atrás la suelta. Atrás de nuevo para terminar.</string>
     <string name="reorder_not_saved">No se pudo guardar el nuevo orden</string>

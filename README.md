@@ -714,6 +714,23 @@ tools/tv.py 'settings put secure screensaver_components com.gathin.tvhome/.Clock
 </details>
 
 <details>
+<summary><b>Your own scene as the screensaver</b></summary>
+
+"Your own scene" shows a page of yours full screen: push it beside `config.json` as `dream/index.html`, with its
+scripts, images or a looping video next to it, then pick it in the screensaver settings, or over ADB:
+
+```bash
+tools/tv.py 'settings put secure screensaver_components com.gathin.tvhome/.WebDream; settings put secure screensaver_enabled 1'
+```
+
+It runs in a WebView with local files only (the launcher has no network permission) and sends the page's console to
+the TV's log under the tag `WebDream`. Folders the ADB shell creates under `Android/data` belong to the shell: give
+them `chmod 775` (files `664`) or the page cannot read them. Without a page it is the Clock screensaver. A heavy
+WebGL scene can be slow on a TV GPU (seconds a frame on a Mali-G52): render it to a looping video and play that.
+
+</details>
+
+<details>
 <summary><b>Remote keys</b></summary>
 
 - An optional accessibility service keeps the remote's **Input** button working on Google TV

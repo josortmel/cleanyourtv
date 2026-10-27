@@ -106,6 +106,7 @@
     <string name="reorder">Reorder apps</string>
     <string name="tile_move">Move</string>
     <string name="shortcut_pinned">%1$s is on Home now.</string>
+    <string name="web_dream_name">Your own scene</string>
     <string name="move_swap_hint">Arrows choose the place, OK swaps the two apps, Back cancels.</string>
     <string name="reorder_hint">OK picks up an app, arrows move it, Back places it. Back again to finish.</string>
     <string name="reorder_not_saved">Couldn\'t save the new order</string>
