@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- An open folder (FolderDialog): Home behind it, blurred and dimmed, then the folder's name over its tiles.
+     The grid takes Home's grid width and padding in code, so its tiles fall in Home's columns. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:clipChildren="false">
+
+    <ImageView
+        android:id="@+id/folderBackdrop"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="centerCrop"
+        android:background="#E6090C14"
+        android:foreground="#80050810"
+        android:contentDescription="@null" />
+
+    <LinearLayout
+        android:id="@+id/folderContent"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_vertical"
+        android:orientation="vertical"
+        android:clipChildren="false"
+        android:clipToPadding="false">
+
+        <TextView
+            android:id="@+id/folderName"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="14dp"
+            android:paddingStart="48dp"
+            android:paddingEnd="48dp"
+            android:gravity="center_horizontal"
+            android:singleLine="true"
+            android:ellipsize="end"
+            android:textColor="#F2FFFFFF"
+            android:textSize="36sp"
+            android:fontFamily="@string/font_light"
+            android:letterSpacing="-0.01"
+            android:shadowColor="#80000000"
+            android:shadowRadius="18" />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/folderGrid"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:clipToPadding="false"
+            android:clipChildren="false"
+            android:overScrollMode="never"
+            android:scrollbars="none"
+            android:descendantFocusability="afterDescendants" />
+    </LinearLayout>
+</FrameLayout>

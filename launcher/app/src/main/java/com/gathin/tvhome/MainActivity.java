@@ -64,8 +64,10 @@ import android.view.SoundEffectConstants;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.view.Window;
+import android.view.WindowManager;
 import android.view.animation.AnimationUtils;
 import android.view.animation.LayoutAnimationController;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -98,7 +100,7 @@ import java.util.Set;
 /**
  * tvOS style home: black, a pinned dock row, an app grid, and one glass highlight that springs between tiles.
  */
-public class MainActivity extends Activity implements AppAdapter.TileListener {
+public class MainActivity extends Activity implements AppAdapter.TileListener, FolderDialog.Host {
     @Override
     protected void attachBaseContext(android.content.Context base) {
         super.attachBaseContext(LauncherLocale.wrap(base));   // locale
@@ -282,6 +284,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private int packageSequence;
     /** The Inputs or Module cards dropdown while one is open, so onPause can close it. */
     private PopupWindow openPopup;
+    /** Folders on Home (config.xml folders), the owner's as saved in folders.txt; null when off. */
+    private Folders folders;
+    /** The folder open over Home, or null. */
+    private FolderDialog openFolder;
+    /** The launcher's settings as loaded, for an opened folder's tiles, which are drawn as Home's are. */
+    private Config config;
     /** Reorder mode is on (top-bar button). */
     private boolean reordering;
     /** Key of the tile being carried in reorder mode, or null. */
@@ -620,6 +628,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         fillDockLeavesSlots = !cfg.fillDock;
         Order savedOrder = Order.load(Order.file(this));
         adapter.setSavedOrder(Order.ranks(savedOrder, dockApps), Order.docked(savedOrder, dockApps));
+        config = cfg;
+        if (cfg.folders) {
+            folders = loadFolders(cfg.startFolders);
+            adapter.setFolders(folders);
+        }
         grid.setAdapter(adapter);
 
         // tvOS layout: push the dock row towards the bottom of the screen, leaving room for
@@ -931,6 +944,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (openLauncherSettingsIfAsked(intent)) return;
         if (openInputsIfAsked(intent)) return;
         if (intent == null || !intent.hasCategory(Intent.CATEGORY_HOME)) return;
+        if (openFolder != null) openFolder.close(false);
         grid.scrollToPosition(0);
         lastFocused = 0;
         lastFocusedKey = adapter.getItemCount() > 0 ? adapter.keyAt(0) : null;
@@ -1150,6 +1164,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         cards = moduleCards ? CardFeature.run(() -> Cards.discover(this, hiddenApps,
                 () -> Cards.load(Cards.storeFile(this)), leanback), none) : none;
         adapter.reload(cards.isEmpty() ? none : CardFeature.run(() -> Cards.shown(cards), none), leanback);
+        if (openFolder != null) {
+            // An app installed or removed under an open folder: it shows what the folder holds now.
+            List<AppAdapter.Entry> inside = adapter.folderTiles(openFolder.folderId);
+            if (inside.isEmpty()) openFolder.close(false);
+            else openFolder.setTiles(inside);
+        }
         lastFocusedKey = returnKey;
         lastFocused = returnSlot;
         packageSequence = currentPackageSequence(packageSequence);
@@ -1203,6 +1223,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (cardPrompt != null) cardPrompt.dismiss();
         if (appLibrary != null) appLibrary.close();
         if (openPopup != null) openPopup.dismiss();
+        if (openFolder != null) openFolder.close(false);   // an app opened from it: Home is what comes back
     }
 
     @Override
@@ -1345,7 +1366,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 && event.getKeyCode() == KeyEvent.KEYCODE_MENU) {
             int position = focusedTilePosition();
             if (position >= 0 && position < adapter.appCount()
-                    && !getPackageName().equals(adapter.packageAt(position))) {
+                    && (adapter.folderIdAt(position) != null || !getPackageName().equals(adapter.packageAt(position)))) {
                 if (event.getAction() == KeyEvent.ACTION_UP && !event.isCanceled()) {
                     onTileLongPress(position, getCurrentFocus());
                 }
@@ -3444,6 +3465,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     public void onTileLongPress(int position, View card) {
         if (reordering) return;
+        String folderId = adapter.folderIdAt(position);
+        if (folderId != null) {
+            showFolderMenu(position, card, folderId);
+            return;
+        }
         String key = adapter.keyAt(position);
         String pkg = adapter.packageAt(position);
         // Empty dock slots and the Default-home tile carry the launcher's own package: no menu for them.
@@ -3456,15 +3482,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             addSettingsMenuRow(rows, popup, inDock ? R.string.tile_replace_in_dock : R.string.tile_add_to_dock,
                     () -> startDockEditFor(key, inDock));
         }
-        if (position < adapter.movableCount()) addSettingsMenuRow(rows, popup, R.string.tile_move, () -> {
-            if (!beginReorder()) return;
-            int at = adapter.positionOf(key);   // beginReorder can rebuild the tiles
-            if (at < 0) return;
-            focusTile(at);
-            pickUp(at);
-            swapping = moveSwaps;
-            Toast.makeText(this, moveSwaps ? R.string.move_swap_hint : R.string.reorder_hint, Toast.LENGTH_LONG).show();
-        });
+        if (position < adapter.movableCount()) addSettingsMenuRow(rows, popup, R.string.tile_move,
+                () -> startMove(key, R.string.move_swap_hint));
+        // The folder list opens once this menu has closed.
+        if (folders != null) addSettingsMenuRow(rows, popup, R.string.tile_add_to_folder,
+                () -> root.post(() -> showFolderPicker(key, card)));
         String shortcutId = adapter.shortcutIdAt(position);
         if (shortcutId != null) {
             // A pinned shortcut comes off Home by unpinning it; the app it belongs to stays.
@@ -3480,27 +3502,288 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // Some firmware has no App info page at all; a row that only toasts "can't open" helps nobody.
         Intent info = SystemSettings.appInfo(this, pkg);
         if (info != null) addSettingsMenuRow(rows, popup, R.string.library_app_info, () -> open(info));
+        showBeside(popup, panel, rows, card, root);
+    }
+
+    /**
+     * Shows a tile's menu by the tile, over the window that holds it (Home, or an open folder). Dock tiles sit near
+     * the bottom of the screen: the menu opens above the tile when it would not fit below.
+     */
+    private void showBeside(PopupWindow popup, View panel, LinearLayout rows, View card, View window) {
         panel.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
         popup.setWidth(Math.max((int) (200 * density), panel.getMeasuredWidth()));
-        // Dock tiles sit near the bottom of the screen: open the menu above the tile when it would not fit below.
         int[] at = new int[2];
         card.getLocationInWindow(at);
         int gap = (int) (10 * density), height = panel.getMeasuredHeight();
-        if (at[1] + card.getHeight() + gap + height <= root.getHeight()) {
+        if (at[1] + card.getHeight() + gap + height <= window.getHeight()) {
             dropIn(popup, panel, card, Gravity.START);
         } else {
             panel.setAlpha(0f);
             panel.setPivotY(height);
             panel.setScaleY(0.92f);
             panel.setTranslationY(8 * density);
-            popup.showAtLocation(root, Gravity.NO_GRAVITY, at[0], Math.max(0, at[1] - gap - height));
+            popup.showAtLocation(window, Gravity.NO_GRAVITY, at[0], Math.max(0, at[1] - gap - height));
             panel.animate().alpha(1f).scaleY(1f).translationY(0f).setDuration(220)
                     .setInterpolator(new android.view.animation.DecelerateInterpolator(1.6f)).start();
         }
         rows.getChildAt(0).requestFocus();
     }
 
+    /** Move in a tile menu: reorder mode with this tile picked up, carried for a swap with move_swaps. */
+    private void startMove(String key, int swapHint) {
+        if (!beginReorder()) return;
+        int at = adapter.positionOf(key);   // beginReorder can rebuild the tiles
+        if (at < 0) return;
+        focusTile(at);
+        pickUp(at);
+        swapping = moveSwaps;
+        Toast.makeText(this, moveSwaps ? swapHint : R.string.reorder_hint, Toast.LENGTH_LONG).show();
+    }
+
+    // ---- folders ---------------------------------------------------------------------------------
+
+    /**
+     * The owner's folders; the first time (no folders.txt yet) start_folders, written at once so that what the owner
+     * changes from then on is what stays. A file that does not read is left alone, and Home starts with none.
+     */
+    private Folders loadFolders(List<String> start) {
+        File file = Folders.file(this);
+        Folders saved = Folders.load(file);
+        if (saved != null) return saved;
+        if (file.exists()) return new Folders();
+        Folders first = Folders.start(start);
+        if (!first.list.isEmpty()) Folders.save(file, first);
+        return first;
+    }
+
+    /** Writes the folders. A failed write keeps the change for as long as Home runs, and says so. */
+    private void saveFolders() {
+        if (!Folders.save(Folders.file(this), folders)) {
+            Toast.makeText(this, R.string.folders_not_saved, Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /** The folder tile's key, as the saved order and the adapter know it. */
+    private String folderKey(Folders.Folder f) {
+        return new ComponentName(this, Folders.TILE_CLASS + f.id).flattenToShortString();
+    }
+
+    /**
+     * Where a tile goes on Home after the one at this place: right after it, or with dock_row past the first row
+     * when the place is in it, so the dock keeps its apps.
+     */
+    private int after(int place, int size) {
+        return Math.min(size, dockRow && place < COLUMNS ? COLUMNS : place + 1);
+    }
+
+    /**
+     * Saves this Home order as a reorder does (endReorder), for a change made by folders. heir takes the dock place of
+     * replaced, which has left Home (fill_dock false keeps the dock's size in the order).
+     */
+    private void saveHomeOrder(List<String> keys, String replaced, String heir) {
+        int docked = -1;
+        if (fillDockLeavesSlots) {
+            Set<String> dock = new HashSet<>();
+            for (int i = 0; i < Math.min(adapter.dockFilled(), adapter.movableCount()); i++) dock.add(adapter.keyAt(i));
+            if (replaced != null && dock.remove(replaced) && heir != null) dock.add(heir);
+            docked = DockSlots.dockCount(keys, COLUMNS, dock);
+            keys = DockSlots.dockFirst(keys, COLUMNS, dock);
+        }
+        Order order = new Order(Order.dockKey(dockApps), keys, docked);
+        if (Order.save(Order.file(this), order)) {
+            adapter.setSavedOrder(Order.ranks(order, dockApps), Order.docked(order, dockApps));
+        } else {
+            Toast.makeText(this, R.string.reorder_not_saved, Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /** Rebuilds Home after a change folders made, with focus on this tile: the focused one may have left Home. */
+    private void reloadFocusing(String key) {
+        lastFocusedKey = key;
+        reloadApps(false);
+        int pos = adapter.positionOf(key);
+        if (pos >= 0) refocusAfterLayout(pos);
+    }
+
+    /** Hold OK on a folder: Rename, Move (the whole folder, as one tile) and Ungroup. */
+    private void showFolderMenu(int position, View card, String folderId) {
+        Folders.Folder f = folders == null ? null : folders.byId(folderId);
+        String key = adapter.keyAt(position);
+        if (f == null || key == null) return;
+        View panel = getLayoutInflater().inflate(R.layout.popup_inputs, root, false);
+        LinearLayout rows = panel.findViewById(R.id.rows);
+        PopupWindow popup = glassPopup(panel, (int) (200 * density));
+        addSettingsMenuRow(rows, popup, R.string.folder_rename, () -> renameFolder(f));
+        if (position < adapter.movableCount()) addSettingsMenuRow(rows, popup, R.string.tile_move,
+                () -> startMove(key, R.string.move_folder_hint));
+        addSettingsMenuRow(rows, popup, R.string.folder_ungroup, () -> ungroup(f));
+        showBeside(popup, panel, rows, card, root);
+    }
+
+    /** Add to folder: the folders on Home, in the order they sit there, then New folder. */
+    private void showFolderPicker(String key, View card) {
+        if (reordering || card.getParent() == null) return;
+        View panel = getLayoutInflater().inflate(R.layout.popup_inputs, root, false);
+        LinearLayout rows = panel.findViewById(R.id.rows);
+        PopupWindow popup = glassPopup(panel, (int) (200 * density));
+        for (int i = 0; i < adapter.appCount(); i++) {
+            String id = adapter.folderIdAt(i);
+            Folders.Folder f = id == null ? null : folders.byId(id);
+            if (f != null) addSettingsMenuRow(rows, popup, f.name, () -> addToFolder(key, f));
+        }
+        addSettingsMenuRow(rows, popup, getString(R.string.folder_new), () -> newFolder(key));
+        showBeside(popup, panel, rows, card, root);
+    }
+
+    /** Puts the tile in the folder; focus goes to the folder, where the tile is now. */
+    private void addToFolder(String key, Folders.Folder f) {
+        f.keys.add(key);
+        saveFolders();
+        Toast.makeText(this, getString(R.string.folder_added, f.name), Toast.LENGTH_SHORT).show();
+        reloadFocusing(folderKey(f));
+    }
+
+    /** A new folder holding the tile, in the tile's place; then its name, ready to type over. */
+    private void newFolder(String key) {
+        Folders.Folder f = folders.create(folders.freeName(getString(R.string.folder_default_name)), key);
+        saveFolders();
+        String folderKey = folderKey(f);
+        List<String> keys = adapter.movableKeys();
+        int at = keys.indexOf(key);
+        if (at >= 0) {
+            keys.set(at, folderKey);
+            saveHomeOrder(keys, key, folderKey);
+        }
+        reloadFocusing(folderKey);
+        root.post(() -> renameFolder(f));
+    }
+
+    /** The folder's name, typed with the TV's keyboard: Done keeps it, Back leaves it as it was. */
+    private void renameFolder(Folders.Folder f) {
+        View panel = getLayoutInflater().inflate(R.layout.dialog_folder_name, root, false);
+        EditText field = panel.findViewById(R.id.folderNameField);
+        // Empty, the name as its hint: what is typed is the whole new name, with no letters to delete one by one with
+        // the remote first (the TV keyboards drop a selection), and Done with nothing typed keeps the name.
+        field.setHint(f.name);
+        Dialog dialog = new Dialog(this);
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        dialog.setContentView(panel);
+        Window w = dialog.getWindow();
+        if (w != null) {
+            w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            w.setLayout((int) (440 * density), ViewGroup.LayoutParams.WRAP_CONTENT);
+            w.setDimAmount(0.6f);
+            // Typing the name is all the dialog is for: the keyboard comes up with it.
+            w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
+        }
+        field.setOnEditorActionListener((v, action, event) -> {
+            String name = Folders.cleanName(field.getText().toString());
+            dialog.dismiss();
+            if (name != null && !name.equals(f.name)) {
+                f.name = name;
+                saveFolders();
+                reloadFocusing(folderKey(f));
+            }
+            return true;
+        });
+        dialog.show();
+        field.requestFocus();
+    }
+
+    /** Ungroup: the folder's tiles back on Home where it was, the first in its place; the folder is gone. */
+    private void ungroup(Folders.Folder f) {
+        List<String> inside = new ArrayList<>();
+        for (AppAdapter.Entry e : adapter.folderTiles(f.id)) inside.add(e.component.flattenToShortString());
+        folders.list.remove(f);
+        saveFolders();
+        String folderKey = folderKey(f);
+        List<String> keys = adapter.movableKeys();
+        int at = keys.indexOf(folderKey);
+        if (at >= 0 && !inside.isEmpty()) {
+            keys.set(at, inside.get(0));
+            keys.addAll(after(at, keys.size()), inside.subList(1, inside.size()));
+            saveHomeOrder(keys, folderKey, inside.get(0));
+        }
+        if (inside.isEmpty()) reloadApps(false);
+        else reloadFocusing(inside.get(0));
+    }
+
+    @Override
+    public void onFolderRequested(String folderId) {
+        if (reordering || openFolder != null || folders == null) return;
+        Folders.Folder f = folders.byId(folderId);
+        if (f == null || adapter.folderTiles(folderId).isEmpty()) return;
+        // Home as it is this moment, blurred, is what the folder opens over.
+        FolderDialog.captureBehind(this, behind -> {
+            List<AppAdapter.Entry> inside = adapter.folderTiles(folderId);
+            if (isFinishing() || openFolder != null || reordering || inside.isEmpty() || !hasWindowFocus()) return;
+            openFolder = new FolderDialog(this, config, COLUMNS, tileWidth(), grid, folderId, f.name, inside,
+                    behind != null ? behind : GlassBackdrop.bitmap(), this);
+            openFolder.show();
+        });
+    }
+
+    /** Width of Home's tiles as laid out now, or 0 when none is (the folder's grid then works it out). */
+    private int tileWidth() {
+        for (int i = 0; i < grid.getChildCount(); i++) {
+            View card = grid.getChildAt(i).findViewById(R.id.card);
+            if (card != null && card.getWidth() > 0) return card.getLayoutParams().width;
+        }
+        return 0;
+    }
+
+    /** Hold OK on a tile in an open folder: Take out of the folder, and App info. */
+    @Override
+    public void onFolderTileLongPress(FolderDialog folder, int position, View card) {
+        AppAdapter.Entry e = folder.adapter.entryAt(position);
+        Folders.Folder f = folders == null ? null : folders.byId(folder.folderId);
+        if (e == null || f == null) return;
+        View panel = getLayoutInflater().inflate(R.layout.popup_inputs, root, false);
+        LinearLayout rows = panel.findViewById(R.id.rows);
+        PopupWindow popup = glassPopup(panel, (int) (200 * density));
+        addSettingsMenuRow(rows, popup, R.string.folder_take_out, () -> takeOut(folder, f, e, position));
+        Intent info = SystemSettings.appInfo(this, e.pkg);
+        if (info != null) addSettingsMenuRow(rows, popup, R.string.library_app_info, () -> open(info));
+        showBeside(popup, panel, rows, card, folder.root());
+    }
+
+    /**
+     * Takes the tile out of its folder, onto Home right after the folder (past the first row when the folder is in
+     * it). The last tile out takes the folder's place, and the folder is gone.
+     */
+    private void takeOut(FolderDialog folder, Folders.Folder f, AppAdapter.Entry e, int position) {
+        int held = -1;
+        for (int i = 0; i < f.keys.size() && held < 0; i++) if (AppAdapter.holds(f.keys.get(i), e)) held = i;
+        if (held < 0) return;
+        f.keys.remove(held);
+        boolean last = adapter.folderTiles(f.id).size() <= 1;
+        if (last) folders.list.remove(f);
+        saveFolders();
+        String key = e.component.flattenToShortString(), folderKey = folderKey(f);
+        List<String> keys = adapter.movableKeys();
+        int at = keys.indexOf(folderKey);
+        if (last && at >= 0) {
+            keys.set(at, key);
+            saveHomeOrder(keys, folderKey, key);
+        } else {
+            keys.add(at < 0 ? keys.size() : after(at, keys.size()), key);
+            saveHomeOrder(keys, null, null);
+        }
+        if (last) folder.close(true);
+        reloadFocusing(last ? key : folderKey);   // reloadTiles shows the open folder what it holds now
+        if (!last) folder.focusAt(position);
+    }
+
+    @Override
+    public void onFolderClosed(FolderDialog folder) {
+        if (openFolder == folder) openFolder = null;
+    }
+
     private void addSettingsMenuRow(LinearLayout rows, PopupWindow popup, int title, Runnable action) {
+        addSettingsMenuRow(rows, popup, getString(title), action);
+    }
+
+    private void addSettingsMenuRow(LinearLayout rows, PopupWindow popup, CharSequence title, Runnable action) {
         View row = getLayoutInflater().inflate(R.layout.item_input, rows, false);
         row.findViewById(R.id.icon).setVisibility(View.GONE);
         row.findViewById(R.id.dot).setVisibility(View.GONE);

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Renaming a folder (folders): a field the TV's keyboard types the new name into, the name it has as the hint.
+     Done on the keyboard keeps what was typed, Back leaves the name as it was. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/glass_panel"
+    android:paddingStart="26dp"
+    android:paddingEnd="26dp"
+    android:paddingTop="22dp"
+    android:paddingBottom="22dp"
+    android:elevation="12dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:labelFor="@+id/folderNameField"
+        android:text="@string/folder_name_title"
+        android:singleLine="true"
+        android:textColor="#FFFFFFFF"
+        android:textSize="22sp"
+        android:fontFamily="@string/font_medium"
+        android:letterSpacing="-0.01" />
+
+    <EditText
+        android:id="@+id/folderNameField"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp"
+        android:background="@drawable/name_field_bg"
+        android:singleLine="true"
+        android:maxLength="40"
+        android:inputType="textCapSentences"
+        android:imeOptions="actionDone|flagNoExtractUi"
+        android:importantForAutofill="no"
+        android:textColorHint="#80FFFFFF"
+        android:textColor="#FFFFFFFF"
+        android:textSize="20sp"
+        android:fontFamily="@string/font_body" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:text="@string/folder_name_hint"
+        android:textColor="#B3FFFFFF"
+        android:textSize="14sp"
+        android:fontFamily="@string/font_body" />
+</LinearLayout>

@@ -25,5 +25,6 @@
   "app_library": true,
   "move_swaps": true,
   "pinned_shortcuts": true,
-  "glass_lens": true
+  "glass_lens": true,
+  "folders": true
 }

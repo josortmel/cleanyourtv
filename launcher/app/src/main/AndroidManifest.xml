@@ -86,7 +86,10 @@
             android:excludeFromRecents="true"
             android:clearTaskOnLaunch="true"
             android:configChanges="orientation|screenSize|keyboard|keyboardHidden|uiMode"
-            android:screenOrientation="landscape">
+            android:screenOrientation="landscape"
+            android:windowSoftInputMode="adjustNothing">
+            <!-- adjustNothing: the TV keyboard a folder's name brings up must not shrink Home behind it; the shorter grid
+                 dropped the focused tile, and focus came back on the top bar. -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.HOME" />

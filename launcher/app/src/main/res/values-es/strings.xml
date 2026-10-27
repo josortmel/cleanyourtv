@@ -69,6 +69,17 @@
     <string name="shortcut_pinned">%1$s ya está en el inicio.</string>
     <string name="web_dream_name">Tu escena</string>
     <string name="move_swap_hint">Elige el sitio con las flechas, OK intercambia las dos apps, Atrás cancela.</string>
+    <string name="move_folder_hint">Elige el sitio con las flechas, OK cambia la carpeta por la ficha de ese sitio, Atrás cancela.</string>
+    <string name="tile_add_to_folder">Añadir a carpeta</string>
+    <string name="folder_new">Nueva carpeta</string>
+    <string name="folder_default_name">Carpeta</string>
+    <string name="folder_added">Ya está en %1$s.</string>
+    <string name="folder_rename">Renombrar</string>
+    <string name="folder_ungroup">Deshacer carpeta</string>
+    <string name="folder_take_out">Sacar de la carpeta</string>
+    <string name="folder_name_title">Nombre de la carpeta</string>
+    <string name="folder_name_hint">OK en el teclado lo guarda; Atrás lo deja como estaba.</string>
+    <string name="folders_not_saved">No se pudieron guardar las carpetas</string>
     <string name="reorder_hint">OK coge una app, las flechas la mueven, Atrás la suelta. Atrás de nuevo para terminar.</string>
     <string name="reorder_not_saved">No se pudo guardar el nuevo orden</string>
     <string name="app_library">Biblioteca de aplicaciones</string>

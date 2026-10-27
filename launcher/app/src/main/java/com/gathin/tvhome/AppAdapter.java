@@ -12,9 +12,17 @@ import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.LinearGradient;
 import android.graphics.Outline;
+import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.PixelFormat;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffXfermode;
 import android.graphics.Rect;
+import android.graphics.RectF;
+import android.graphics.Shader;
+import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
@@ -62,10 +70,14 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         /** Hold OK on a tile: the activity shows the tile menu (move, remove from Home, app info). */
         void onTileLongPress(int position, View card);
         void onLibraryUp();
+
+        /** OK on a folder tile (folders): the activity opens it. */
+        default void onFolderRequested(String folderId) {
+        }
     }
 
     static final class Entry {
-        static final int APP = 0, HOME_SETTINGS = 1, CARD = 2, EMPTY = 3, SHORTCUT = 4;
+        static final int APP = 0, HOME_SETTINGS = 1, CARD = 2, EMPTY = 3, SHORTCUT = 4, FOLDER = 5;
 
         final int kind;
         final String label;
@@ -73,6 +85,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         final String pkg;
         /** SHORTCUT: the pinned shortcut's id in its app (pinned_shortcuts); null for every other tile. */
         final String shortcutId;
+        /** FOLDER: the folder's id in Folders (folders); null for every other tile. */
+        final String folderId;
         final Drawable banner;
         final Drawable icon;
         /** Text under the tile when it is focused in the grid: the label, plus the caption for a card. */
@@ -92,8 +106,14 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
         Entry(int kind, String label, ComponentName component, Drawable banner, Drawable icon, String caption, int accent,
               String shortcutId) {
+            this(kind, label, component, banner, icon, caption, accent, shortcutId, null);
+        }
+
+        Entry(int kind, String label, ComponentName component, Drawable banner, Drawable icon, String caption, int accent,
+              String shortcutId, String folderId) {
             this.kind = kind;
             this.shortcutId = shortcutId;
+            this.folderId = folderId;
             this.label = label;
             this.component = component;
             this.pkg = component.getPackageName();
@@ -237,9 +257,23 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     /** Packages drawn from their icon and name even when they have a banner (config.xml icon_tiles). */
     private final Set<String> iconTiles;
     private final List<Entry> items = new ArrayList<>();
+    /** Folders on Home (config.xml folders): each shown folder's tile stands in for the tiles it holds. Null when off. */
+    private Folders folders;
+    /** The tiles of each shown folder at the last reload, by folder id, in the folder's order. */
+    private final Map<String, List<Entry>> folderTiles = new HashMap<>();
+    private final Set<String> folderedPackages = new HashSet<>();
+    /** An open folder's grid (FolderDialog): its tiles are set, not loaded, and nothing of the dock applies to them. */
+    private final boolean inFolder;
+    /** The folder's grid sets Home's tile width so its tiles match; 0 works it out from the grid, as Home does. */
+    private int tileWidth;
 
     AppAdapter(Context ctx, TileListener listener, int dockSize, Config cfg) {
+        this(ctx, listener, dockSize, cfg, false);
+    }
+
+    AppAdapter(Context ctx, TileListener listener, int dockSize, Config cfg, boolean inFolder) {
         this.ctx = ctx;
+        this.inFolder = inFolder;
         this.listener = listener;
         this.dockSize = dockSize;
         this.favourites = cfg.dockApps;
@@ -248,8 +282,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         this.libraryPreload = new HashSet<>(cfg.libraryApps);
         this.animations = cfg.animations;
         this.advancedEffects = cfg.animations && cfg.advancedEffects;
-        this.showHomeSettings = cfg.showHomeSettingsShortcut;
-        this.showLibrary = LibraryApps.showPill(cfg.appLibrary, cfg.libraryButton, cfg.showLibraryPill);
+        this.showHomeSettings = !inFolder && cfg.showHomeSettingsShortcut;
+        this.showLibrary = !inFolder && LibraryApps.showPill(cfg.appLibrary, cfg.libraryButton, cfg.showLibraryPill);
         this.reducedMotion = cfg.reducedMotion;
         this.focusOvershoot = cfg.focusOvershoot;
         this.rowsBelowDock = cfg.rowsBelowDock;
@@ -341,9 +375,10 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                         banner, null, null, 0, s.getId()));
             }
         }
+        final Map<String, Integer> ranks = folders == null ? savedRanks : gather(fresh);
         Collections.sort(fresh, (a, b) -> {
             // The owner's own order first; tiles it does not know (new installs) follow by the rule below.
-            int saved = Order.compare(savedRanks, a.component.flattenToShortString(), b.component.flattenToShortString());
+            int saved = Order.compare(ranks, a.component.flattenToShortString(), b.component.flattenToShortString());
             if (saved != 0) return saved;
             int fa = favourites.indexOf(favouriteKey(a)), fb = favourites.indexOf(favouriteKey(b));
             if (fa >= 0 || fb >= 0) {
@@ -373,6 +408,116 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         items.clear();
         items.addAll(fresh);
         notifyDataSetChanged();
+    }
+
+    /**
+     * folders: takes each folder's tiles off Home and puts the folder's own tile in, and returns the saved ranks with
+     * a place for each folder the saved order does not know yet (just made, or from start_folders): its first tile's.
+     * A folder with none of its tiles installed has no tile, and stays saved for when they are back.
+     */
+    private Map<String, Integer> gather(List<Entry> fresh) {
+        Map<String, Integer> ranks = new HashMap<>(savedRanks);
+        folderTiles.clear();
+        folderedPackages.clear();
+        for (Folders.Folder f : folders.list) {
+            List<Entry> inside = new ArrayList<>();
+            Integer first = null;
+            for (String key : f.keys) {
+                for (int i = 0; i < fresh.size(); i++) {
+                    Entry e = fresh.get(i);
+                    if (!holds(key, e)) continue;
+                    Integer rank = savedRanks.get(e.component.flattenToShortString());
+                    if (rank != null && (first == null || rank < first)) first = rank;
+                    inside.add(fresh.remove(i));
+                    break;
+                }
+            }
+            if (inside.isEmpty()) continue;
+            Entry tile = new Entry(Entry.FOLDER, f.name, new ComponentName(ctx, Folders.TILE_CLASS + f.id), mosaic(inside),
+                    null, null, 0, null, f.id);
+            String key = tile.component.flattenToShortString();
+            if (first != null && !ranks.containsKey(key)) ranks.put(key, first);
+            folderTiles.put(f.id, inside);
+            for (Entry e : inside) folderedPackages.add(e.pkg);
+            fresh.add(tile);
+        }
+        return ranks;
+    }
+
+    /** A folder holds this tile under this key: the tile's own, or its name in dock_apps (as start_folders names it). */
+    static boolean holds(String key, Entry e) {
+        return key.equals(e.component.flattenToShortString()) || key.equals(favouriteKey(e));
+    }
+
+    /**
+     * A folder's artwork: its first four tiles in two rows of two, each as Home shows it (its banner, or its icon on
+     * its plate), the folder's own glass or card showing between them; a free place is a faint pane.
+     */
+    private Drawable mosaic(List<Entry> inside) {
+        float density = ctx.getResources().getDisplayMetrics().density;
+        // A little over the design size, so the focus zoom does not soften it.
+        int w = Math.round(DESIGN_W_DP * density * 1.25f), h = Math.round(DESIGN_H_DP * density * 1.25f);
+        Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bmp);
+        float pad = h * 0.09f, gap = h * 0.055f;
+        float cw = (w - 2 * pad - gap) / 2f, ch = (h - 2 * pad - gap) / 2f;
+        float radius = cw * 16f / DESIGN_W_DP;   // a tile's own shape: 16dp at the design width (cornerRadius)
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+        // An xfermode only acts where its own shape is drawn, so the shape is everything but the rounded cell: the
+        // corners it clears are then cut cleanly, where a rounded shape drawn over the cell left them square.
+        Paint corners = new Paint(Paint.ANTI_ALIAS_FLAG);
+        corners.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.CLEAR));
+        Path outside = new Path();
+        for (int i = 0; i < 4; i++) {
+            float x = pad + (i % 2) * (cw + gap), y = pad + (i / 2) * (ch + gap);
+            RectF cell = new RectF(x, y, x + cw, y + ch);
+            if (i >= inside.size()) {
+                paint.setColor(0x1AFFFFFF);
+                canvas.drawRoundRect(cell, radius, radius, paint);
+                continue;
+            }
+            Entry e = inside.get(i);
+            // Drawn in a layer of its own, whose corners are then cleared: a clipped canvas would leave them jagged.
+            int layer = canvas.saveLayer(cell, null);
+            if (e.banner != null) {
+                drawCropped(canvas, e.banner, cell);
+            } else {
+                if (e.backdrop == null) e.backdrop = backdrop(e.icon, ambientOf(e));
+                paint.setShader(new LinearGradient(0, cell.top, 0, cell.bottom, e.backdrop[0], e.backdrop[1],
+                        Shader.TileMode.CLAMP));
+                canvas.drawRect(cell, paint);
+                paint.setShader(null);
+                if (e.icon != null) {
+                    float side = ch * ICON_SHARE;
+                    Drawable d = copyOf(e.icon);
+                    d.setBounds(Math.round(cell.centerX() - side / 2), Math.round(cell.centerY() - side / 2),
+                            Math.round(cell.centerX() + side / 2), Math.round(cell.centerY() + side / 2));
+                    d.draw(canvas);
+                }
+            }
+            outside.reset();
+            outside.addRoundRect(cell, radius, radius, Path.Direction.CW);
+            outside.setFillType(Path.FillType.INVERSE_WINDING);
+            canvas.drawPath(outside, corners);
+            canvas.restoreToCount(layer);
+        }
+        return new BitmapDrawable(ctx.getResources(), bmp);
+    }
+
+    /** Draws the drawable over the cell, centre-cropped as a tile's banner is. */
+    private static void drawCropped(Canvas canvas, Drawable live, RectF cell) {
+        Drawable d = copyOf(live);
+        int iw = d.getIntrinsicWidth(), ih = d.getIntrinsicHeight();
+        float s = iw > 0 && ih > 0 ? Math.max(cell.width() / iw, cell.height() / ih) : 0f;
+        float dw = s > 0 ? iw * s : cell.width(), dh = s > 0 ? ih * s : cell.height();
+        d.setBounds(Math.round(cell.centerX() - dw / 2), Math.round(cell.centerY() - dh / 2),
+                Math.round(cell.centerX() + dw / 2), Math.round(cell.centerY() + dh / 2));
+        d.draw(canvas);
+    }
+
+    /** A private copy to draw: changing the bounds of the drawable a tile shows would blank that tile. */
+    private static Drawable copyOf(Drawable live) {
+        return live.getConstantState() != null ? live.getConstantState().newDrawable().mutate() : live;
     }
 
     /** icon_tiles: the app's icon centred on a dark banner-shaped tile, for apps whose own banner crops badly. */
@@ -445,7 +590,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         float density = parent.getResources().getDisplayMetrics().density;
         int width = parent.getWidth() > 0 ? parent.getWidth() : parent.getMeasuredWidth();
         int inner = width - parent.getPaddingLeft() - parent.getPaddingRight();
-        int w = tileWidthPx(inner, parent.getHeight(), dockSize, rowsBelowDock, dockTitle, dockRow, density), h = tileHeightPx(w);
+        int w = tileWidth > 0 ? tileWidth
+                : tileWidthPx(inner, parent.getHeight(), dockSize, rowsBelowDock, dockTitle, dockRow, density), h = tileHeightPx(w);
         View card = v.findViewById(R.id.card);
         ViewGroup.LayoutParams cardLp = card.getLayoutParams();
         cardLp.width = w;
@@ -463,7 +609,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         }
         name.setLayoutParams(nameLp);
         // A sideways row would stretch a match_parent item across the whole screen: give it a grid column's width.
-        if (singleRow) v.getLayoutParams().width = inner / dockSize;
+        if (singleRow && !inFolder) v.getLayoutParams().width = inner / dockSize;
         if (uniformTiles || glassTiles) {
             // tvOS-style tile: a large centred mark, no caption inside the card.
             View icon = v.findViewById(R.id.icon);
@@ -506,7 +652,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         h.name.setText(e.name);
         // The dock has no labels, unless always_show_names asks for them (DockDecoration then makes room in the band).
         // In a single row every tile is the dock's kind: the big title above names it.
-        boolean dockKind = dockRow && (singleRow || position < dockSize);
+        boolean dockKind = !inFolder && dockRow && (singleRow || position < dockSize);
         h.name.setVisibility(dockKind && restNameAlpha == 0f ? View.INVISIBLE : View.VISIBLE);
         boolean focused = h.card.isFocused();   // a rebind after reload() can hit the focused tile
         h.name.setAlpha(focused ? 1f : restNameAlpha);
@@ -579,8 +725,45 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         return position >= 0 && position < items.size() ? items.get(position).shortcutId : null;
     }
 
+    /** The folder's id at this position (folders), or null when the tile is not a folder. */
+    String folderIdAt(int position) {
+        return position >= 0 && position < items.size() ? items.get(position).folderId : null;
+    }
+
+    /** The tile at this position, or null. */
+    Entry entryAt(int position) {
+        return position >= 0 && position < items.size() ? items.get(position) : null;
+    }
+
+    /** Folders on Home (folders), or null to show every tile; used from the next reload(). */
+    void setFolders(Folders folders) {
+        this.folders = folders;
+    }
+
+    /** The tiles the folder held at the last reload, in its order; empty when it had no tile. */
+    List<Entry> folderTiles(String folderId) {
+        List<Entry> tiles = folderTiles.get(folderId);
+        return tiles == null ? Collections.emptyList() : tiles;
+    }
+
+    /** An open folder's grid (FolderDialog): exactly these tiles, which Home's reload already made. */
+    void setTiles(List<Entry> tiles) {
+        items.clear();
+        items.addAll(tiles);
+        notifyDataSetChanged();
+    }
+
+    /** Tiles this wide from now on, as Home's are (an open folder's grid); 0 goes back to working it out. */
+    void setTileWidth(int px) {
+        tileWidth = px;
+    }
+
     /** Opens the tile's activity by explicit component, with no extras: a card can name nothing else. */
     private void launch(Entry e) {
+        if (e.kind == Entry.FOLDER) {
+            listener.onFolderRequested(e.folderId);
+            return;
+        }
         if (e.kind == Entry.SHORTCUT) {
             if (!PinnedShortcuts.start(ctx, e.pkg, e.shortcutId)) {
                 Toast.makeText(ctx, ctx.getString(R.string.cant_open, e.label), Toast.LENGTH_SHORT).show();
@@ -629,7 +812,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     boolean containsPackage(String pkg) {
         for (Entry entry : items) if (entry.pkg.equals(pkg)) return true;
-        return false;
+        return folderedPackages.contains(pkg);   // in a folder is on Home too
     }
 
     @Override
@@ -736,7 +919,10 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     /** A vivid colour sampled from the app's banner (or icon), cached per entry; a card's accent when it set one. */
     int ambientColorAt(int position) {
         if (position < 0 || position >= items.size()) return 0xFF444444;
-        Entry e = items.get(position);
+        return ambientOf(items.get(position));
+    }
+
+    private int ambientOf(Entry e) {
         if (e.ambient == 0) {
             e.ambient = (uniformTiles || glassTiles) && e.banner == null ? dominantColor(e.icon) : vividColor(e.banner != null ? e.banner : e.icon);
         }
@@ -754,7 +940,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 if (card != null) card.invalidate();
             }
         };
-        GlassBackdrop.setListener(redraw);
+        // One listener at a time, and it stays Home's: an open folder is gone again long before the wallpaper turns.
+        if (!inFolder) GlassBackdrop.setListener(redraw);
         rv.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
             public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
