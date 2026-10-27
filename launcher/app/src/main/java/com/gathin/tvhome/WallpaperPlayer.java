@@ -48,6 +48,11 @@ final class WallpaperPlayer {
     private final int dimColor;
     /** The picture on screen, released once the next one has been drawn. */
     private Bitmap current;
+    /** glass_tiles: the tiles see the wallpaper through glass, so each decode also makes their blurred copy. */
+    private final boolean glassTiles;
+    private final int glassBlur;
+    /** The blurred copy of the last decoded picture, handed to the tiles when that picture is shown. */
+    private volatile Bitmap pendingGlass;
     private boolean active;
     private boolean closed;
     private boolean loading;
@@ -65,6 +70,8 @@ final class WallpaperPlayer {
     WallpaperPlayer(Context context, FrameLayout root, Config config) {
         this.root = root;
         backgroundColor = config.backgroundColor;
+        glassTiles = config.glassTiles;
+        glassBlur = config.glassBlur;
         files = new ArrayList<>(config.wallpapers);
         interval = config.wallpaperRotationMinutes * 60_000L;
         bitmapConfig = config.wallpaperTrueColor ? Bitmap.Config.ARGB_8888 : Bitmap.Config.RGB_565;
@@ -266,6 +273,7 @@ final class WallpaperPlayer {
         // The wallpaper covers the whole root; avoid drawing the fallback colour under it.
         root.setBackground(null);
         image.setImageBitmap(bitmap);
+        if (glassTiles) GlassBackdrop.set(pendingGlass, width, height);
         if (old != null && old != bitmap) image.postDelayed(old::recycle, 500);
     }
 
@@ -291,6 +299,7 @@ final class WallpaperPlayer {
             Bitmap decoded = BitmapFactory.decodeFile(file.getPath(), options);
             if (decoded == null) return null;
             if (dimColor != 0) new Canvas(decoded).drawColor(dimColor);
+            if (glassTiles) pendingGlass = GlassBackdrop.blur(decoded, glassBlur);
             // One copy in GPU memory instead of a software bitmap plus its texture; the decode stays off the UI
             // thread for rotations, and Home's return no longer uploads 4-8 MB to the GPU.
             Bitmap gpu = decoded.copy(Bitmap.Config.HARDWARE, false);

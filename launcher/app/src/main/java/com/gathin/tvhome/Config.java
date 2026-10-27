@@ -147,6 +147,12 @@ final class Config {
     final boolean libraryOkOpens;
     /** Icon on a card tinted from that icon, instead of the app's banner (config.xml uniform_tiles). */
     final boolean uniformTiles;
+    /** Every tile a pane of glass over the wallpaper with the app's mark on it (config.xml glass_tiles). */
+    final boolean glassTiles;
+    /** glass_tiles: how milky the glass is, 0 clear to 100 frosted (config.xml glass_frost). */
+    final int glassFrost;
+    /** glass_tiles: how much the picture behind the glass is blurred, 0 sharp to 10 (config.xml glass_blur). */
+    final int glassBlur;
     /** Background colour behind everything, #RRGGBB; black unless a theme says otherwise. */
     final int backgroundColor;
     /** Time-of-day backdrop, 0 to 100 (config.xml, sky_intensity); 0 keeps the plain background. */
@@ -272,7 +278,7 @@ final class Config {
                    List<RaceWeekend.Race> raceCalendar, boolean cinematicHome, boolean ambientGlow, boolean appGlow, boolean fadeRows, int homeIdleClockMinutes,
                    boolean keyFilter, boolean dockGlass, String glowStyle, boolean wallpaperCaptions,
                    boolean handleViewInputs, boolean tileMenu, boolean dockEvenPadding, boolean dockBand, boolean cinematicDots, boolean cinematicWhiteFocus, boolean wifiStatusColor, int cinematicScrim, int cinematicArt,
-                   Map<String, Set<String>> wallpaperMoods, boolean gamepadPassthrough, boolean consumeVolumeKeys, boolean powerOnHome, boolean homeLongPressHome, boolean wifiStatusWarnings, List<String> topBarApps, boolean showGreeting, boolean headerWhite, boolean clockWallpaper, int clockWallpaperDim, boolean clockGlow, String glassStyle, boolean singleRow, boolean dockBandAll, boolean lunarDate, int lunarUtcOffset, boolean dateBelowClock, boolean vpnPill, String locale, boolean powerOnHomeAlways, boolean inputsConnectedOnly) {
+                   Map<String, Set<String>> wallpaperMoods, boolean gamepadPassthrough, boolean consumeVolumeKeys, boolean powerOnHome, boolean homeLongPressHome, boolean wifiStatusWarnings, List<String> topBarApps, boolean showGreeting, boolean headerWhite, boolean clockWallpaper, int clockWallpaperDim, boolean clockGlow, String glassStyle, boolean singleRow, boolean dockBandAll, boolean lunarDate, int lunarUtcOffset, boolean dateBelowClock, boolean vpnPill, String locale, boolean powerOnHomeAlways, boolean inputsConnectedOnly, boolean glassTiles, int glassFrost, int glassBlur) {
         this.handleViewInputs = handleViewInputs;
         this.tileMenu = tileMenu;
         this.inputKeycodes = inputKeycodes;
@@ -333,6 +339,9 @@ final class Config {
         this.appLibrarySelection = appLibrarySelection;
         this.libraryOkOpens = libraryOkOpens;
         this.uniformTiles = uniformTiles;
+        this.glassTiles = glassTiles;
+        this.glassFrost = glassFrost;
+        this.glassBlur = glassBlur;
         this.backgroundColor = backgroundColor;
         this.skyIntensity = skyIntensity;
         this.settingsKeycodes = settingsKeycodes;
@@ -455,6 +464,9 @@ final class Config {
         boolean librarySelection = res.getBoolean(R.bool.app_library_selection);
         boolean libraryOkOpens = res.getBoolean(R.bool.library_ok_opens);
         boolean uniformTiles = res.getBoolean(R.bool.uniform_tiles);
+        boolean glassTiles = res.getBoolean(R.bool.glass_tiles);
+        int glassFrost = res.getInteger(R.integer.glass_frost);
+        int glassBlur = res.getInteger(R.integer.glass_blur);
         int background = 0xFF000000;
         int skyIntensity = res.getInteger(R.integer.sky_intensity);
         int[] settingsKeycodes = res.getIntArray(R.array.settings_key_keycodes);
@@ -560,6 +572,9 @@ final class Config {
             librarySelection = bool(json, "app_library_selection", librarySelection);
             libraryOkOpens = bool(json, "library_ok_opens", libraryOkOpens);
             uniformTiles = bool(json, "uniform_tiles", uniformTiles);
+            glassTiles = bool(json, "glass_tiles", glassTiles);
+            glassFrost = integer(json, "glass_frost", glassFrost, 0, 100);
+            glassBlur = integer(json, "glass_blur", glassBlur, 0, 10);
             background = color(json, "background_color", background);
             skyIntensity = integer(json, "sky_intensity", skyIntensity, 0, 100);
             settingsKeycodes = intArray(json, "settings_key_keycodes", settingsKeycodes);
@@ -665,7 +680,7 @@ final class Config {
                 dockBand, cinematicDots, cinematicWhiteFocus, wifiStatusColor, cinematicScrim, cinematicArt, wallpaperMoods, gamepadPassthrough,
                 consumeVolumeKeys, powerOnHome, homeLongPressHome, wifiStatusWarnings, topBarApps, showGreeting, headerWhite, clockWallpaper,
                 Math.max(0, Math.min(90, clockWallpaperDim)), clockGlow, glassStyle, singleRow && dockRow, dockBandAll, lunar, lunarOffset,
-                dateBelowClock, vpnPill, locale, powerOnHomeAlways, inputsConnectedOnly);
+                dateBelowClock, vpnPill, locale, powerOnHomeAlways, inputsConnectedOnly, glassTiles, glassFrost, glassBlur);
     }
 
     /**

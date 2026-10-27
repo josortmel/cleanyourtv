@@ -216,6 +216,11 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private final Map<String, String> appLabels, appBanners;
     /** Every app tile is its icon on a card tinted from that icon, never its banner (config.xml, uniform_tiles). */
     private final boolean uniformTiles;
+    /** Every tile under a pane of glass, the wallpaper showing through where its artwork lets it (config.xml, glass_tiles). */
+    private final boolean glassTiles;
+    /** The glass tiles' fill where no wallpaper shows through (config.xml background_color). */
+    private final int glassFallback;
+    private final int glassFrost;
     /** Packages drawn from their icon and name even when they have a banner (config.xml icon_tiles). */
     private final Set<String> iconTiles;
     private final List<Entry> items = new ArrayList<>();
@@ -246,6 +251,9 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         this.appLabels = cfg.appLabels;
         this.appBanners = cfg.appBanners;
         this.uniformTiles = cfg.uniformTiles;
+        this.glassTiles = cfg.glassTiles;
+        this.glassFallback = cfg.backgroundColor;
+        this.glassFrost = cfg.glassFrost;
         // Tiles keep their identity across reload(), so a focused tile stays on its app instead of
         // its view being rebound to whatever app now sits in that slot.
         setHasStableIds(true);
@@ -432,7 +440,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         name.setLayoutParams(nameLp);
         // A sideways row would stretch a match_parent item across the whole screen: give it a grid column's width.
         if (singleRow) v.getLayoutParams().width = inner / dockSize;
-        if (uniformTiles) {
+        if (uniformTiles || glassTiles) {
             // tvOS-style tile: a large centred mark, no caption inside the card.
             View icon = v.findViewById(R.id.icon);
             FrameLayout.LayoutParams iconLp = (FrameLayout.LayoutParams) icon.getLayoutParams();
@@ -487,7 +495,20 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         // A fully opaque banner covers the whole card (centerCrop), so the card's own fill under it is drawn for
         // nothing on every frame; keep it under banners with transparent parts and under icon tiles.
         h.card.setBackground(e.banner != null && e.banner.getOpacity() == PixelFormat.OPAQUE ? null : h.cardBackground);
-        if (uniformTiles && e.banner == null) {
+        if (glassTiles) {
+            // The app's image fills the tile; the glass is the sheen and rim over it, and the picture behind where
+            // a banner has transparent parts. A tile without a banner is its icon on the icon's own plate.
+            float density = ctx.getResources().getDisplayMetrics().density;
+            float radius = cornerRadius(h.card.getLayoutParams().width, density);
+            if (e.banner == null) {
+                if (e.backdrop == null) e.backdrop = backdrop(e.icon, ambientColorAt(position));
+                h.card.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, e.backdrop));
+            } else if (e.banner.getOpacity() != PixelFormat.OPAQUE) {
+                h.card.setBackground(new GlassTileDrawable(density, radius, glassFallback, glassFrost, false));
+            }
+            h.card.setForeground(new GlassTileDrawable(density, radius, glassFallback, glassFrost, true));
+            h.card.setElevation(3f * density);
+        } else if (uniformTiles && e.banner == null) {
             if (e.backdrop == null) e.backdrop = backdrop(e.icon, ambientColorAt(position));
             h.card.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, e.backdrop));
         }
@@ -502,7 +523,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             h.icon.setImageDrawable(e.icon);
             h.icon.setVisibility(View.VISIBLE);
             h.label.setText(e.label);
-            h.label.setVisibility(uniformTiles ? View.GONE : View.VISIBLE);
+            h.label.setVisibility(uniformTiles || glassTiles ? View.GONE : View.VISIBLE);
         }
         h.card.setOnClickListener(v -> launch(e));
         h.card.setOnLongClickListener(v -> {
@@ -674,9 +695,29 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         if (position < 0 || position >= items.size()) return 0xFF444444;
         Entry e = items.get(position);
         if (e.ambient == 0) {
-            e.ambient = uniformTiles && e.banner == null ? dominantColor(e.icon) : vividColor(e.banner != null ? e.banner : e.icon);
+            e.ambient = (uniformTiles || glassTiles) && e.banner == null ? dominantColor(e.icon) : vividColor(e.banner != null ? e.banner : e.icon);
         }
         return e.ambient;
+    }
+
+    @Override
+    public void onAttachedToRecyclerView(@NonNull RecyclerView rv) {
+        super.onAttachedToRecyclerView(rv);
+        if (!glassTiles) return;
+        // The glass paints the picture behind it, which changes when the row scrolls or the wallpaper rotates.
+        Runnable redraw = () -> {
+            for (int i = 0; i < rv.getChildCount(); i++) {
+                View card = rv.getChildAt(i).findViewById(R.id.card);
+                if (card != null) card.invalidate();
+            }
+        };
+        GlassBackdrop.setListener(redraw);
+        rv.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override
+            public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
+                redraw.run();
+            }
+        });
     }
 
     /** Share of the tile height the icon takes in uniform_tiles mode (onCreateViewHolder). */

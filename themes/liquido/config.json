@@ -1,0 +1,23 @@
+{
+  "dock_apps": [
+    "com.plexapp.android",
+    "com.netflix.ninja",
+    "com.wbd.stream",
+    "com.amazon.amazonvideo.livingroom",
+    "com.google.android.youtube.tv",
+    "com.google.android.youtube.tvmusic",
+    "com.valvesoftware.steamlink",
+    "com.limelight"
+  ],
+  "background_color": "#090C14",
+  "wallpaper": true,
+  "wallpaper_true_color": true,
+  "dock_band": false,
+  "glass_tiles": true,
+  "icon_only_buttons": true,
+  "focus_overshoot": false,
+  "advanced_effects": true,
+  "glass_frost": 8,
+  "glass_blur": 1,
+  "glass_style": "rim"
+}

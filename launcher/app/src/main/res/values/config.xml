@@ -375,6 +375,14 @@
     <!-- Every app tile is its icon on a card tinted from that icon, name only under the focused tile,
          instead of each app's own banner. Off by default; a theme can set "uniform_tiles": true. -->
     <bool name="uniform_tiles">false</bool>
+    <!-- Every tile a pane of glass after tvOS 26's Liquid Glass: the wallpaper behind it blurred and slightly magnified,
+         a sheen and a lit rim, with the app's mark on it (its adaptive icon's foreground where it has one). Implies
+         uniform_tiles' layout. Off by default; a theme can set "glass_tiles": true. -->
+    <bool name="glass_tiles">false</bool>
+    <!-- glass_tiles: how milky the glass is, 0 clear to 100 frosted. Theme key "glass_frost". -->
+    <integer name="glass_frost">30</integer>
+    <!-- glass_tiles: how much the picture behind the glass is blurred, 0 sharp to 10. Theme key "glass_blur". -->
+    <integer name="glass_blur">3</integer>
     <!-- Optional direct Home picker in the app library: OK toggles the checkmark, checked apps first.
          Off by default; a theme can set "app_library_selection": true (also needs app_library). -->
     <bool name="app_library_selection">false</bool>
