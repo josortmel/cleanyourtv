@@ -377,6 +377,17 @@
          with folders on; from then on the folders are the owner's. Empty by default; "start_folders" in a theme's
          config.json. -->
     <string-array name="start_folders" />
+    <!-- The PC's games as tiles. games.json, pushed beside config.json by the PC, names the PC as Moonlight knows it and
+         each game Sunshine streams with the number Sunshine gives it ({"computer": {"name": "PC", "uuid": "..."},
+         "games": [{"name": "Noita", "app_id": 1912334158, "hdr": true}]}); each is a tile that opens straight into
+         the game through Moonlight, waking the PC first, with banners/<name>.jpg as its art. A game installed on the PC
+         reaches Home with no step on the TV, one removed leaves it, and a game pinned from Moonlight before keeps its
+         place. Home rebuilds when the file arrives. Can also be set with "pc_games": true in a theme's config.json. -->
+    <bool name="pc_games">false</bool>
+    <!-- With pc_games and folders, a game new to games.json goes into the folder of this name, made when there is
+         none; one the owner takes out stays out. Empty by default (new games join the grid); "pc_games_folder" in a
+         theme's config.json. -->
+    <string name="pc_games_folder" translatable="false"></string>
 
     <!-- Grid rows left visible under the dock on the home screen. 0 = dock sits at the very bottom. Tiles shrink if
          the dock, its title and this many rows would not otherwise fit the screen height. -->

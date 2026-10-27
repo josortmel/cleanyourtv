@@ -45,6 +45,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.UserHandle;
 import android.os.Environment;
+import android.os.FileObserver;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
@@ -92,6 +93,7 @@ import java.util.Calendar;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -290,6 +292,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, F
     private FolderDialog openFolder;
     /** The launcher's settings as loaded, for an opened folder's tiles, which are drawn as Home's are. */
     private Config config;
+    /** pc_games: tiles for the PC's games from games.json; new ones go into pc_games_folder when it names one. */
+    private boolean pcGames;
+    private String pcGamesFolder = "";
+    /** Rebuilds the tiles when games.json arrives from the PC (pc_games). */
+    private FileObserver gamesWatch;
     /** Reorder mode is on (top-bar button). */
     private boolean reordering;
     /** Key of the tile being carried in reorder mode, or null. */
@@ -633,6 +640,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, F
             folders = loadFolders(cfg.startFolders);
             adapter.setFolders(folders);
         }
+        pcGames = cfg.pcGames;
+        pcGamesFolder = cfg.pcGamesFolder;
+        if (pcGames) watchGames();
         grid.setAdapter(adapter);
 
         // tvOS layout: push the dock row towards the bottom of the screen, leaving room for
@@ -1163,6 +1173,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, F
                 new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER), 0);
         cards = moduleCards ? CardFeature.run(() -> Cards.discover(this, hiddenApps,
                 () -> Cards.load(Cards.storeFile(this)), leanback), none) : none;
+        if (pcGames) prepareGames();
         adapter.reload(cards.isEmpty() ? none : CardFeature.run(() -> Cards.shown(cards), none), leanback);
         if (openFolder != null) {
             // An app installed or removed under an open folder: it shows what the folder holds now.
@@ -1312,6 +1323,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, F
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (gamesWatch != null) gamesWatch.stopWatching();
         unregisterReceiver(packageReceiver);
         if (shortcutCallback != null) {
             LauncherApps la = getSystemService(LauncherApps.class);
@@ -3488,7 +3500,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, F
         if (folders != null) addSettingsMenuRow(rows, popup, R.string.tile_add_to_folder,
                 () -> root.post(() -> showFolderPicker(key, card)));
         String shortcutId = adapter.shortcutIdAt(position);
-        if (shortcutId != null) {
+        if (adapter.isGameAt(position)) {
+            // The PC's list decides which games are on Home (pc_games): Remove from Home would take Moonlight off.
+        } else if (shortcutId != null) {
             // A pinned shortcut comes off Home by unpinning it; the app it belongs to stays.
             addSettingsMenuRow(rows, popup, R.string.library_remove_shortcut, () -> {
                 if (!PinnedShortcuts.unpin(this, pkg, shortcutId)) {
@@ -3554,6 +3568,75 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, F
         Folders first = Folders.start(start);
         if (!first.list.isEmpty()) Folders.save(file, first);
         return first;
+    }
+
+    // ---- the PC's games (pc_games) ---------------------------------------------------------------
+
+    /**
+     * The PC's list for this rebuild, and its new games into pc_games_folder (made when there is none) before the tiles
+     * sort. A game new to the list goes into the folder, unless a folder holds it already; one Home shows already,
+     * pinned from Moonlight before, stays where the owner put it.
+     */
+    private void prepareGames() {
+        PcGames games = PcGames.load(PcGames.file(this));
+        adapter.setPcGames(games);
+        if (games == null) return;
+        File seenFile = PcGames.seenFile(this);
+        PcGames.Seen seen = PcGames.loadSeen(seenFile);
+        Set<String> slugs = new LinkedHashSet<>();
+        for (PcGames.Game g : games.games) slugs.add(PinnedShortcuts.slug(g.name));
+        Set<String> seenSlugs = seen == null ? Collections.emptySet() : seen.slugs;
+        String folderId = seen == null ? null : seen.folderId;
+        if (!seenSlugs.containsAll(slugs) && folders != null && !pcGamesFolder.isEmpty()) {
+            Set<String> onHome = new HashSet<>();   // asked for only when a game is new
+            for (ShortcutInfo s : PinnedShortcuts.pinned(this)) {
+                if (PcGames.MOONLIGHT.equals(s.getPackage())) onHome.add(PinnedShortcuts.slug(PinnedShortcuts.label(s)));
+            }
+            Folders.Folder into = folderId == null ? null : folders.byId(folderId);
+            if (into == null) into = folderNamed(pcGamesFolder);
+            boolean changed = false;
+            for (String slug : PcGames.arrived(new ArrayList<>(slugs), seenSlugs, onHome)) {
+                String key = "shortcut:" + slug;
+                if (folderHolding(key) != null) continue;
+                if (into == null) into = folders.create(pcGamesFolder, key);
+                else into.keys.add(key);
+                changed = true;
+            }
+            if (into != null) folderId = into.id;
+            if (changed) saveFolders();
+        }
+        if (seen == null || !seenSlugs.equals(slugs) || !String.valueOf(folderId).equals(String.valueOf(seen.folderId))) {
+            PcGames.saveSeen(seenFile, new PcGames.Seen(slugs, folderId));
+        }
+    }
+
+    /** The folder with this name, ignoring case, or null. */
+    private Folders.Folder folderNamed(String name) {
+        for (Folders.Folder f : folders.list) if (f.name.equalsIgnoreCase(name)) return f;
+        return null;
+    }
+
+    /** The folder holding this key, or null. */
+    private Folders.Folder folderHolding(String key) {
+        for (Folders.Folder f : folders.list) if (f.keys.contains(key)) return f;
+        return null;
+    }
+
+    /** games.json arriving from the PC rebuilds the tiles: now, or when Home is next on screen (TileRefresh). */
+    @SuppressWarnings("deprecation")   // FileObserver(File, int) is API 29; this launcher starts at 26
+    private void watchGames() {
+        File dir = getExternalFilesDir(null);
+        if (dir == null) return;
+        gamesWatch = new FileObserver(dir.getPath(), FileObserver.CLOSE_WRITE | FileObserver.MOVED_TO) {
+            @Override
+            public void onEvent(int event, String path) {
+                if (!PcGames.FILE_NAME.equals(path)) return;
+                root.post(() -> {
+                    if (!isDestroyed() && !reordering && tileRefresh.onPackagesChanged()) reloadApps(false);
+                });
+            }
+        };
+        gamesWatch.startWatching();
     }
 
     /** Writes the folders. A failed write keeps the change for as long as Home runs, and says so. */

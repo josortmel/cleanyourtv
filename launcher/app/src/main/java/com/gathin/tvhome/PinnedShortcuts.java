@@ -95,18 +95,8 @@ final class PinnedShortcuts {
      * the shortcut's icon on a blurred, darkened copy of itself, so a poster-shaped icon still fills a 16:9 tile.
      */
     static Drawable banner(Context ctx, ShortcutInfo s, String label) {
-        File dir = ctx.getExternalFilesDir(BANNER_DIR);
-        if (dir != null) {
-            String base = slug(label);
-            for (String ext : new String[]{".jpg", ".png", ".webp"}) {
-                File f = new File(dir, base + ext);
-                if (!f.isFile()) continue;
-                BitmapFactory.Options o = new BitmapFactory.Options();
-                o.inPreferredConfig = Bitmap.Config.ARGB_8888;
-                Bitmap b = BitmapFactory.decodeFile(f.getPath(), o);
-                if (b != null) return new BitmapDrawable(ctx.getResources(), b);
-            }
-        }
+        Drawable pushed = pushedBanner(ctx, label);
+        if (pushed != null) return pushed;
         LauncherApps la = ctx.getSystemService(LauncherApps.class);
         Drawable icon = null;
         try {
@@ -114,6 +104,22 @@ final class PinnedShortcuts {
         } catch (SecurityException | IllegalStateException ignored) {
         }
         return icon == null ? null : composed(ctx, icon);
+    }
+
+    /** The banner pushed for this tile name (banners/&lt;slug&gt;.jpg, .png or .webp), or null when there is none. */
+    static Drawable pushedBanner(Context ctx, String label) {
+        File dir = ctx.getExternalFilesDir(BANNER_DIR);
+        if (dir == null) return null;
+        String base = slug(label);
+        for (String ext : new String[]{".jpg", ".png", ".webp"}) {
+            File f = new File(dir, base + ext);
+            if (!f.isFile()) continue;
+            BitmapFactory.Options o = new BitmapFactory.Options();
+            o.inPreferredConfig = Bitmap.Config.ARGB_8888;
+            Bitmap b = BitmapFactory.decodeFile(f.getPath(), o);
+            if (b != null) return new BitmapDrawable(ctx.getResources(), b);
+        }
+        return null;
     }
 
     private static Drawable composed(Context ctx, Drawable icon) {

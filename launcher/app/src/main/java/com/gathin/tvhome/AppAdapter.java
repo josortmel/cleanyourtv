@@ -77,7 +77,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     }
 
     static final class Entry {
-        static final int APP = 0, HOME_SETTINGS = 1, CARD = 2, EMPTY = 3, SHORTCUT = 4, FOLDER = 5;
+        static final int APP = 0, HOME_SETTINGS = 1, CARD = 2, EMPTY = 3, SHORTCUT = 4, FOLDER = 5, GAME = 6;
 
         final int kind;
         final String label;
@@ -95,6 +95,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         int ambient;
         /** uniform_tiles card fill, top and bottom colour; null until sampled from the icon. */
         int[] backdrop;
+        /** GAME: the PC's game this tile opens through Moonlight (pc_games); null for every other tile. */
+        PcGames.Game game;
 
         Entry(String label, ComponentName component, Drawable banner, Drawable icon) {
             this(APP, label, component, banner, icon, null, 0);
@@ -266,6 +268,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private final boolean inFolder;
     /** The folder's grid sets Home's tile width so its tiles match; 0 works it out from the grid, as Home does. */
     private int tileWidth;
+    /** The PC's games (pc_games, games.json), or null for none. */
+    private PcGames pcGames;
 
     AppAdapter(Context ctx, TileListener listener, int dockSize, Config cfg) {
         this(ctx, listener, dockSize, cfg, false);
@@ -370,11 +374,13 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             // A pinned shortcut is a tile of its own, keyed by its app and id so the saved order keeps it in place.
             for (ShortcutInfo s : PinnedShortcuts.pinned(ctx)) {
                 String label = Cards.cleanLabel(PinnedShortcuts.label(s), s.getPackage());
+                if (pcGames != null && pcGames.dropped(s.getPackage(), s.getShortLabel(), label)) continue;
                 Drawable banner = PinnedShortcuts.banner(ctx, s, label);
                 fresh.add(new Entry(Entry.SHORTCUT, label, new ComponentName(s.getPackage(), "shortcut/" + s.getId()),
                         banner, null, null, 0, s.getId()));
             }
         }
+        if (pcGames != null) addGames(fresh, pm);
         final Map<String, Integer> ranks = folders == null ? savedRanks : gather(fresh);
         Collections.sort(fresh, (a, b) -> {
             // The owner's own order first; tiles it does not know (new installs) follow by the rule below.
@@ -408,6 +414,49 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         items.clear();
         items.addAll(fresh);
         notifyDataSetChanged();
+    }
+
+    /**
+     * pc_games: a tile per game the PC lists. A game pinned from Moonlight already has a tile: the game's takes its
+     * place, under the same key, so it keeps its rank and its folder, and the pinned one is not shown twice.
+     */
+    private void addGames(List<Entry> fresh, PackageManager pm) {
+        Map<String, Entry> pinned = new HashMap<>();
+        for (Entry e : fresh) {
+            if (e.kind == Entry.SHORTCUT && e.pkg.equals(PcGames.MOONLIGHT)) pinned.put(PinnedShortcuts.slug(e.label), e);
+        }
+        Drawable moonlight = null;
+        for (PcGames.Game g : pcGames.games) {
+            String slug = PinnedShortcuts.slug(g.name);
+            Entry was = pinned.remove(slug);
+            if (was != null) fresh.remove(was);
+            Drawable banner = was != null ? was.banner : PinnedShortcuts.pushedBanner(ctx, g.name);
+            Drawable icon = null;
+            if (banner == null) {
+                // No art pushed yet: Moonlight's icon on its plate, with the game's name.
+                if (moonlight == null) {
+                    try {
+                        moonlight = pm.getApplicationIcon(PcGames.MOONLIGHT);
+                    } catch (PackageManager.NameNotFoundException ignored) {
+                    }
+                }
+                icon = moonlight;
+            }
+            Entry tile = new Entry(Entry.GAME, g.name, was != null ? was.component
+                    : new ComponentName(PcGames.MOONLIGHT, "game/" + slug), banner, icon, null, 0);
+            tile.game = g;
+            fresh.add(tile);
+        }
+    }
+
+    /** The tile at this position is one of the PC's games (pc_games). */
+    boolean isGameAt(int position) {
+        return position >= 0 && position < items.size() && items.get(position).kind == Entry.GAME;
+    }
+
+    /** pc_games: the PC's games, or null for none; used from the next reload(). */
+    void setPcGames(PcGames games) {
+        pcGames = games;
     }
 
     /**
@@ -717,7 +766,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
      * a game's shortcut is not docked just because Moonlight is.
      */
     private static String favouriteKey(Entry e) {
-        return e.kind == Entry.SHORTCUT ? "shortcut:" + PinnedShortcuts.slug(e.label) : e.pkg;
+        return e.kind == Entry.SHORTCUT || e.kind == Entry.GAME ? "shortcut:" + PinnedShortcuts.slug(e.label) : e.pkg;
     }
 
     /** The pinned shortcut's id at this position (pinned_shortcuts), or null when the tile is an app. */
@@ -762,6 +811,12 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private void launch(Entry e) {
         if (e.kind == Entry.FOLDER) {
             listener.onFolderRequested(e.folderId);
+            return;
+        }
+        if (e.kind == Entry.GAME) {
+            if (pcGames == null || !pcGames.launch(ctx, e.game)) {
+                Toast.makeText(ctx, ctx.getString(R.string.cant_open, e.label), Toast.LENGTH_SHORT).show();
+            }
             return;
         }
         if (e.kind == Entry.SHORTCUT) {

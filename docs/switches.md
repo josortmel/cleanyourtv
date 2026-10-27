@@ -52,6 +52,8 @@ fits the rules; keys from before the rule sit on its wanted list until a screens
 | `glass_lens` | <img src="switches/glass_lens.jpg" width="320" alt="glass_lens on a TV"> |
 | `folders` | <img src="switches/folders.jpg" width="320" alt="folders on a TV"> |
 | `start_folders` | <img src="switches/start_folders.jpg" width="320" alt="start_folders on a TV"> |
+| `pc_games` | <img src="switches/pc_games.jpg" width="320" alt="pc_games on a TV"> |
+| `pc_games_folder` | <img src="switches/pc_games_folder.jpg" width="320" alt="pc_games_folder on a TV"> |
 | `lunar_date` | <img src="switches/lunar_date.jpg" width="320" alt="lunar_date on a TV"> |
 | `dock_band` | <img src="switches/dock_band.jpg" width="320" alt="dock_band on a TV"> |
 | `show_library_pill` | <img src="switches/show_library_pill.jpg" width="320" alt="show_library_pill on a TV"> |

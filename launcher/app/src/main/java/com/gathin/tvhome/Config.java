@@ -256,6 +256,10 @@ final class Config {
     final boolean folders;
     /** The folders Home starts with, "Name=app,app" (config.xml start_folders). */
     final List<String> startFolders;
+    /** The PC's games from games.json as tiles that open them through Moonlight (config.xml pc_games). */
+    final boolean pcGames;
+    /** The folder a game new to games.json goes into, or "" for none (config.xml pc_games_folder). */
+    final String pcGamesFolder;
     /** With wifi_status_color, the icon orange while connected without internet (a captive portal) and red while offline (config.xml, wifi_status_warnings). */
     final boolean wifiStatusWarnings;
     /** Apps shown as round logo buttons in the top bar, left of the network pill, and no longer as tiles (config.xml, top_bar_apps). */
@@ -289,7 +293,7 @@ final class Config {
                    boolean keyFilter, boolean dockGlass, String glowStyle, boolean wallpaperCaptions,
                    boolean handleViewInputs, boolean tileMenu, boolean dockEvenPadding, boolean dockBand, boolean cinematicDots, boolean cinematicWhiteFocus, boolean wifiStatusColor, int cinematicScrim, int cinematicArt,
                    Map<String, Set<String>> wallpaperMoods, boolean gamepadPassthrough, boolean consumeVolumeKeys, boolean powerOnHome, boolean homeLongPressHome, boolean wifiStatusWarnings, List<String> topBarApps, boolean showGreeting, boolean headerWhite, boolean clockWallpaper, int clockWallpaperDim, boolean clockGlow, String glassStyle, boolean singleRow, boolean dockBandAll, boolean lunarDate, int lunarUtcOffset, boolean dateBelowClock, boolean vpnPill, String locale, boolean powerOnHomeAlways, boolean inputsConnectedOnly, boolean glassTiles, int glassFrost, int glassBlur, boolean moveSwaps, boolean pinnedShortcuts, boolean glassLens,
-                   boolean folders, List<String> startFolders) {
+                   boolean folders, List<String> startFolders, boolean pcGames, String pcGamesFolder) {
         this.handleViewInputs = handleViewInputs;
         this.tileMenu = tileMenu;
         this.inputKeycodes = inputKeycodes;
@@ -358,6 +362,8 @@ final class Config {
         this.glassLens = glassLens;
         this.folders = folders;
         this.startFolders = Collections.unmodifiableList(new ArrayList<>(startFolders));
+        this.pcGames = pcGames;
+        this.pcGamesFolder = pcGamesFolder;
         this.backgroundColor = backgroundColor;
         this.skyIntensity = skyIntensity;
         this.settingsKeycodes = settingsKeycodes;
@@ -488,6 +494,8 @@ final class Config {
         boolean glassLens = res.getBoolean(R.bool.glass_lens);
         boolean folders = res.getBoolean(R.bool.folders);
         List<String> startFolders = new ArrayList<>(Arrays.asList(res.getStringArray(R.array.start_folders)));
+        boolean pcGames = res.getBoolean(R.bool.pc_games);
+        String pcGamesFolder = res.getString(R.string.pc_games_folder).trim();
         int background = 0xFF000000;
         int skyIntensity = res.getInteger(R.integer.sky_intensity);
         int[] settingsKeycodes = res.getIntArray(R.array.settings_key_keycodes);
@@ -601,6 +609,8 @@ final class Config {
             glassLens = bool(json, "glass_lens", glassLens);
             folders = bool(json, "folders", folders);
             startFolders = stringList(json, "start_folders", startFolders);
+            pcGames = bool(json, "pc_games", pcGames);
+            pcGamesFolder = string(json, "pc_games_folder", pcGamesFolder).trim();
             background = color(json, "background_color", background);
             skyIntensity = integer(json, "sky_intensity", skyIntensity, 0, 100);
             settingsKeycodes = intArray(json, "settings_key_keycodes", settingsKeycodes);
@@ -707,7 +717,7 @@ final class Config {
                 consumeVolumeKeys, powerOnHome, homeLongPressHome, wifiStatusWarnings, topBarApps, showGreeting, headerWhite, clockWallpaper,
                 Math.max(0, Math.min(90, clockWallpaperDim)), clockGlow, glassStyle, singleRow && dockRow, dockBandAll, lunar, lunarOffset,
                 dateBelowClock, vpnPill, locale, powerOnHomeAlways, inputsConnectedOnly, glassTiles, glassFrost, glassBlur, moveSwaps, pinnedShortcuts, glassLens,
-                folders, startFolders);
+                folders, startFolders, pcGames, pcGamesFolder);
     }
 
     /**
