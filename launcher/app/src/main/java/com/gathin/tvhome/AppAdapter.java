@@ -97,6 +97,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         int[] backdrop;
         /** GAME: the PC's game this tile opens through Moonlight (pc_games); null for every other tile. */
         PcGames.Game game;
+        /** GAME: the list it came from, so the tile opens from an open folder's grid too, which has no list of its own. */
+        PcGames pc;
 
         Entry(String label, ComponentName component, Drawable banner, Drawable icon) {
             this(APP, label, component, banner, icon, null, 0);
@@ -445,6 +447,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             Entry tile = new Entry(Entry.GAME, g.name, was != null ? was.component
                     : new ComponentName(PcGames.MOONLIGHT, "game/" + slug), banner, icon, null, 0);
             tile.game = g;
+            tile.pc = pcGames;
             fresh.add(tile);
         }
     }
@@ -814,7 +817,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             return;
         }
         if (e.kind == Entry.GAME) {
-            if (pcGames == null || !pcGames.launch(ctx, e.game)) {
+            if (e.pc == null || !e.pc.launch(ctx, e.game)) {
                 Toast.makeText(ctx, ctx.getString(R.string.cant_open, e.label), Toast.LENGTH_SHORT).show();
             }
             return;
