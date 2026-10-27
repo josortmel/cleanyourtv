@@ -24,5 +24,6 @@
   "tile_menu": true,
   "app_library": true,
   "move_swaps": true,
-  "pinned_shortcuts": true
+  "pinned_shortcuts": true,
+  "glass_lens": true
 }

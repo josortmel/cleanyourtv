@@ -250,6 +250,8 @@ final class Config {
     final boolean moveSwaps;
     /** Shortcuts other apps pin to Home show as tiles of their own (config.xml pinned_shortcuts). */
     final boolean pinnedShortcuts;
+    /** The glass of each tile as a lens, with the tvOS tilt on focus (config.xml glass_lens, Android 13+). */
+    final boolean glassLens;
     /** With wifi_status_color, the icon orange while connected without internet (a captive portal) and red while offline (config.xml, wifi_status_warnings). */
     final boolean wifiStatusWarnings;
     /** Apps shown as round logo buttons in the top bar, left of the network pill, and no longer as tiles (config.xml, top_bar_apps). */
@@ -282,7 +284,7 @@ final class Config {
                    List<RaceWeekend.Race> raceCalendar, boolean cinematicHome, boolean ambientGlow, boolean appGlow, boolean fadeRows, int homeIdleClockMinutes,
                    boolean keyFilter, boolean dockGlass, String glowStyle, boolean wallpaperCaptions,
                    boolean handleViewInputs, boolean tileMenu, boolean dockEvenPadding, boolean dockBand, boolean cinematicDots, boolean cinematicWhiteFocus, boolean wifiStatusColor, int cinematicScrim, int cinematicArt,
-                   Map<String, Set<String>> wallpaperMoods, boolean gamepadPassthrough, boolean consumeVolumeKeys, boolean powerOnHome, boolean homeLongPressHome, boolean wifiStatusWarnings, List<String> topBarApps, boolean showGreeting, boolean headerWhite, boolean clockWallpaper, int clockWallpaperDim, boolean clockGlow, String glassStyle, boolean singleRow, boolean dockBandAll, boolean lunarDate, int lunarUtcOffset, boolean dateBelowClock, boolean vpnPill, String locale, boolean powerOnHomeAlways, boolean inputsConnectedOnly, boolean glassTiles, int glassFrost, int glassBlur, boolean moveSwaps, boolean pinnedShortcuts) {
+                   Map<String, Set<String>> wallpaperMoods, boolean gamepadPassthrough, boolean consumeVolumeKeys, boolean powerOnHome, boolean homeLongPressHome, boolean wifiStatusWarnings, List<String> topBarApps, boolean showGreeting, boolean headerWhite, boolean clockWallpaper, int clockWallpaperDim, boolean clockGlow, String glassStyle, boolean singleRow, boolean dockBandAll, boolean lunarDate, int lunarUtcOffset, boolean dateBelowClock, boolean vpnPill, String locale, boolean powerOnHomeAlways, boolean inputsConnectedOnly, boolean glassTiles, int glassFrost, int glassBlur, boolean moveSwaps, boolean pinnedShortcuts, boolean glassLens) {
         this.handleViewInputs = handleViewInputs;
         this.tileMenu = tileMenu;
         this.inputKeycodes = inputKeycodes;
@@ -348,6 +350,7 @@ final class Config {
         this.glassBlur = glassBlur;
         this.moveSwaps = moveSwaps;
         this.pinnedShortcuts = pinnedShortcuts;
+        this.glassLens = glassLens;
         this.backgroundColor = backgroundColor;
         this.skyIntensity = skyIntensity;
         this.settingsKeycodes = settingsKeycodes;
@@ -475,6 +478,7 @@ final class Config {
         int glassBlur = res.getInteger(R.integer.glass_blur);
         boolean moveSwaps = res.getBoolean(R.bool.move_swaps);
         boolean pinnedShortcuts = res.getBoolean(R.bool.pinned_shortcuts);
+        boolean glassLens = res.getBoolean(R.bool.glass_lens);
         int background = 0xFF000000;
         int skyIntensity = res.getInteger(R.integer.sky_intensity);
         int[] settingsKeycodes = res.getIntArray(R.array.settings_key_keycodes);
@@ -585,6 +589,7 @@ final class Config {
             glassBlur = integer(json, "glass_blur", glassBlur, 0, 10);
             moveSwaps = bool(json, "move_swaps", moveSwaps);
             pinnedShortcuts = bool(json, "pinned_shortcuts", pinnedShortcuts);
+            glassLens = bool(json, "glass_lens", glassLens);
             background = color(json, "background_color", background);
             skyIntensity = integer(json, "sky_intensity", skyIntensity, 0, 100);
             settingsKeycodes = intArray(json, "settings_key_keycodes", settingsKeycodes);
@@ -690,7 +695,7 @@ final class Config {
                 dockBand, cinematicDots, cinematicWhiteFocus, wifiStatusColor, cinematicScrim, cinematicArt, wallpaperMoods, gamepadPassthrough,
                 consumeVolumeKeys, powerOnHome, homeLongPressHome, wifiStatusWarnings, topBarApps, showGreeting, headerWhite, clockWallpaper,
                 Math.max(0, Math.min(90, clockWallpaperDim)), clockGlow, glassStyle, singleRow && dockRow, dockBandAll, lunar, lunarOffset,
-                dateBelowClock, vpnPill, locale, powerOnHomeAlways, inputsConnectedOnly, glassTiles, glassFrost, glassBlur, moveSwaps, pinnedShortcuts);
+                dateBelowClock, vpnPill, locale, powerOnHomeAlways, inputsConnectedOnly, glassTiles, glassFrost, glassBlur, moveSwaps, pinnedShortcuts, glassLens);
     }
 
     /**

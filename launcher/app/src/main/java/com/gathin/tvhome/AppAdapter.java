@@ -232,6 +232,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private final int glassFrost;
     /** Shortcuts other apps pin to Home are tiles too (config.xml, pinned_shortcuts). */
     private final boolean pinnedShortcuts;
+    /** glass_lens: each tile's glass bends its image and the focused tile tilts (Android 13+). */
+    private final boolean glassLens;
     /** Packages drawn from their icon and name even when they have a banner (config.xml icon_tiles). */
     private final Set<String> iconTiles;
     private final List<Entry> items = new ArrayList<>();
@@ -266,6 +268,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         this.glassFallback = cfg.backgroundColor;
         this.glassFrost = cfg.glassFrost;
         this.pinnedShortcuts = cfg.pinnedShortcuts;
+        this.glassLens = cfg.glassTiles && cfg.glassLens && GlassLens.supported();
         // Tiles keep their identity across reload(), so a focused tile stays on its app instead of
         // its view being rebound to whatever app now sits in that slot.
         setHasStableIds(true);
@@ -479,7 +482,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             View label = v.findViewById(R.id.label);
             label.setPadding(label.getPaddingLeft(), label.getPaddingTop(), label.getPaddingRight(), Math.round(4f * density));
         }
-        return new Holder(v, listener, animations, advancedEffects, reducedMotion, restNameAlpha, focusOvershoot);
+        return new Holder(v, listener, animations, advancedEffects, reducedMotion, restNameAlpha, focusOvershoot, glassLens);
     }
 
     @Override
@@ -970,7 +973,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         final boolean overshoot;
 
         Holder(View v, TileListener listener, boolean animations, boolean advancedEffects,
-               boolean reducedMotion, float restNameAlpha, boolean overshoot) {
+               boolean reducedMotion, float restNameAlpha, boolean overshoot, boolean glassLens) {
             super(v);
             card = v.findViewById(R.id.card);
             cardBackground = card.getBackground();
@@ -1047,11 +1050,16 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                             .translationY(focused ? density * 4f : -density * 6f)
                             .setDuration(220).start();
                 }
+                if (glassLens && animations && !reducedMotion) {
+                    boolean fromLeft = !focused || GlassLens.cameFromLeft(view);
+                    GlassLens.onFocus(view, banner.getVisibility() == View.VISIBLE ? banner : icon, density, focused, fromLeft);
+                }
                 int pos = getBindingAdapterPosition();
                 if (focused && listener != null && pos != RecyclerView.NO_POSITION) {
                     listener.onTileFocused(pos, view);
                 }
             });
+            if (glassLens) GlassLens.attach(card, density);
         }
     }
 }

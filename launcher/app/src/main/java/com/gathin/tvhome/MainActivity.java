@@ -451,6 +451,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         sky.setIntensity(cfg.skyIntensity);
         glass = findViewById(R.id.glass);
         glass.setStyle(cfg.glassStyle);
+        // glass_lens: the focused tile tilts and lights its own rim, as on tvOS; a highlight that slides between
+        // tiles without tilting would draw a second, offset outline around it.
+        if (cfg.glassTiles && cfg.glassLens && GlassLens.supported()) glass.setVisibility(View.INVISIBLE);
         if (festive) glass.setAccent(festival.accentColor());
         ambient = findViewById(R.id.ambient);
         // The glow is one bitmap, so its alpha can be applied while drawing it. Otherwise every frame of

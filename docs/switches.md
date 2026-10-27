@@ -49,6 +49,7 @@ fits the rules; keys from before the rule sit on its wanted list until a screens
 | `glass_blur` | <img src="switches/glass_tiles.jpg" width="320" alt="glass_blur on a TV"> |
 | `move_swaps` | <img src="switches/move_swaps.jpg" width="320" alt="move_swaps on a TV"> |
 | `pinned_shortcuts` | <img src="switches/pinned_shortcuts.jpg" width="320" alt="pinned_shortcuts on a TV"> |
+| `glass_lens` | <img src="switches/glass_lens.jpg" width="320" alt="glass_lens on a TV"> |
 | `lunar_date` | <img src="switches/lunar_date.jpg" width="320" alt="lunar_date on a TV"> |
 | `dock_band` | <img src="switches/dock_band.jpg" width="320" alt="dock_band on a TV"> |
 | `show_library_pill` | <img src="switches/show_library_pill.jpg" width="320" alt="show_library_pill on a TV"> |

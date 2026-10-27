@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- glass_lens: the focus animation running on a tile, so the next focus change can cancel it. -->
+    <item name="glass_lens_anim" type="id" />
+    <!-- glass_lens: the tile's compiled lens shader, reused for every frame of its animations. -->
+    <item name="glass_lens_shader" type="id" />
+</resources>
